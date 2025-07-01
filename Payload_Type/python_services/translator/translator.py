@@ -40,21 +40,39 @@ class RangoTranslator(TranslationContainer):
         return response
 
     async def translate_to_c2_format(self, inputMsg: TrMythicC2ToCustomMessageFormatMessage) -> TrMythicC2ToCustomMessageFormatMessageResponse:
+        response = TrMythicC2ToCustomMessageFormatMessageResponse(Success=True)
         """
-        Translates messages from Mythic C2's internal format to the Rango agent's custom format (JSON bytes).
-        This function is called when Mythic wants to send a task or response to the agent.
-
-        Args:
-            inputMsg (TrMythicC2ToCustomMessageFormatMessage): Message from Mythic (a dictionary).
-
-        Returns:
-            TrMythicC2ToCustomMessageFormatMessageResponse: Response containing the message as JSON bytes for the agent.
+        Alternative version that sends plain JSON (not base64 encoded) to match your current setup.
+        Use this if your agent is expecting plain JSON responses.
         """
         response = TrMythicC2ToCustomMessageFormatMessageResponse(Success=True)
-        # Convert Mythic's dictionary message into a JSON string, then encode it to bytes.
-        # The agent will receive these bytes and should be able to parse them as JSON.
-        response.Message = json.dumps(inputMsg.Message).encode('utf-8')
+        
+        try:
+            # inputMsg.Message contains the Python dictionary from Mythic
+            mythic_data = inputMsg.Message
+            print(f"Translating Mythic data to plain JSON: {mythic_data}")
+            
+            # Convert the Mythic data to JSON string
+            json_string = json.dumps(mythic_data)
+            print(f"Sending plain JSON: {json_string}")
+            
+            # Return as bytes (JSON string encoded as UTF-8)
+            response.Message = json_string.encode('utf-8')
+            
+        except json.JSONEncodeError as e:
+            response.Success = False
+            response.Error = f"Failed to encode message to JSON: {e}"
+            print(f"JSON encode error: {e}")
+        except Exception as e:
+            response.Success = False
+            response.Error = f"An unexpected error occurred during translation: {e}"
+            print(f"Unexpected error in translate_to_c2_format: {e}")
+            import traceback
+            traceback.print_exc()
+        
         return response
+
+
     async def translate_from_c2_format(self, inputMsg: TrCustomMessageToMythicC2FormatMessage) -> TrCustomMessageToMythicC2FormatMessageResponse:
         """
         Translates messages from the Rango agent's custom format to Mythic C2's internal format (a dictionary).
