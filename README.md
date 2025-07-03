@@ -1,6 +1,6 @@
 ## Rango 
 
-![Rango Logo](./Payload_Type/python_services/rango/agent_functions/rango.png)
+![Rango Logo](./rango-2.png)
 Rango is a simple and basic Mythic C2 agent written in zig. 
 
 It is designed as a proof of concept for testing zig as a language for writing C2 agents.
