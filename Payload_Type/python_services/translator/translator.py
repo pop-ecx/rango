@@ -46,63 +46,51 @@ class RangoTranslator(TranslationContainer):
         Use this if your agent is expecting plain JSON responses.
         """
         response = TrMythicC2ToCustomMessageFormatMessageResponse(Success=True)
-        
+        agent_uuid = inputMsg.UUID
         try:
-            # inputMsg.Message contains the Python dictionary from Mythic
             mythic_data = inputMsg.Message
-            print(f"Translating Mythic data to plain JSON: {mythic_data}")
-            
-            # Convert the Mythic data to JSON string
+            # Mythic provides the agent's UUID for outgoing messages here
+            agent_uuid = inputMsg.UUID 
+
+            # Convert the Mythic data (dictionary) to JSON string
             json_string = json.dumps(mythic_data)
-            print(f"Sending plain JSON: {json_string}")
             
-            # Return as bytes (JSON string encoded as UTF-8)
-            response.Message = json_string.encode('utf-8')
+            # Prepend the UUID and then base64 encode the combined string
+            # Ensure both are strings for concatenation before encoding to bytes
+            combined_string = f"{agent_uuid}{json_string}" 
+            encoded_bytes = base64.b64encode(combined_string.encode('utf-8'))
+            
+            print(f"Translating Mythic data to base64 encoded: {combined_string[:min(len(combined_string), 100)]}... -> {encoded_bytes[:min(len(encoded_bytes), 100)]}...")
+            
+            response.Message = encoded_bytes
             
         except json.JSONEncodeError as e:
             response.Success = False
             response.Error = f"Failed to encode message to JSON: {e}"
-            print(f"JSON encode error: {e}")
+            print(f"JSON encode error in translate_to_c2_format: {e}")
         except Exception as e:
             response.Success = False
-            response.Error = f"An unexpected error occurred during translation: {e}"
+            response.Error = f"An unexpected error occurred during translation_to_c2_format: {e}"
             print(f"Unexpected error in translate_to_c2_format: {e}")
             import traceback
             traceback.print_exc()
         
         return response
 
-
     async def translate_from_c2_format(self, inputMsg: TrCustomMessageToMythicC2FormatMessage) -> TrCustomMessageToMythicC2FormatMessageResponse:
-        """
-        Translates messages from the Rango agent's custom format to Mythic C2's internal format (a dictionary).
-        This function is crucial for the check-in process and for receiving tasking responses from the agent.
-
-        The function will:
-        1. Try to base64 decode the incoming message first (for base64(uuid + json) format)
-        2. If that fails, treat it as direct JSON
-        3. Perform type conversions for 'pid', 'integrity_level', and 'ips' if they are not in the expected format.
-        4. Return the information as a Python dictionary for Mythic.
-
-        Args:
-            inputMsg (TrCustomMessageToMythicC2FormatMessage): Raw message bytes received from the agent.
-
-        Returns:
-            TrCustomMessageToMythicC2FormatMessageResponse: Response containing the message as a Python dictionary for Mythic.
-        """
         response = TrCustomMessageToMythicC2FormatMessageResponse(Success=True)
         try:
             received_data = None
-            payload_uuid = None
-            
+            payload_uuid = inputMsg.UUID or None
+            print(f"Translating from C2 format with UUID: {payload_uuid}") 
             # First, try to base64 decode (in case it's base64(uuid + json) format)
             try:
                 print(f"Attempting base64 decode of: {inputMsg.Message}")
-                decoded_bytes = base64.b64decode(inputMsg.Message)
+                decoded_bytes = base64.b64decode(inputMsg.Message).decode('utf-8')
                 print(f"Successfully base64 decoded. Length: {len(decoded_bytes)}")
                 
                 # Look for JSON start
-                json_start = decoded_bytes.find(b'{')
+                json_start = decoded_bytes.find('{')
                 
                 if json_start == -1:
                     raise ValueError("No JSON found in base64 decoded data")
@@ -133,19 +121,19 @@ class RangoTranslator(TranslationContainer):
                 received_data = json.loads(json_string)
                 print(f"Successfully parsed as direct JSON")
                 
-                # Extract UUID from JSON if not already extracted
-                payload_uuid = received_data.get('uuid')
+                # Extract UUID from JSON
+                #payload_uuid = received_data.get('uuid')
+                if not payload_uuid:
+                    print("Warning: No UUID found in JSON data")
 
             # Handle post_response action
             if received_data.get('action') == 'post_response':
                 print(f"Processing post_response action with {len(received_data.get('responses', []))} responses")
-                await self.handle_post_response(received_data)
+                await self.handle_post_response(received_data, payload_uuid)
                 
-                # Return success message for post_response (no further processing needed)
-                response.Message = {"action": "post_response", "status": "processed"}
+                # Return success message for post_response
+                response.Message = received_data
                 return response
-
-            # --- Type Conversions for check-in and other messages ---
 
             # Convert 'integrity_level' from string to int
             if 'integrity_level' in received_data and isinstance(received_data['integrity_level'], str):
@@ -171,7 +159,6 @@ class RangoTranslator(TranslationContainer):
             # Ensure UUID consistency
             if payload_uuid and "uuid" in received_data and received_data["uuid"] != payload_uuid:
                 print(f"Warning: UUID mismatch. Extracted: {payload_uuid}, From JSON: {received_data['uuid']}")
-                # Use the UUID from JSON as it's more reliable
             elif payload_uuid and "uuid" not in received_data:
                 received_data["uuid"] = payload_uuid
 
@@ -196,22 +183,18 @@ class RangoTranslator(TranslationContainer):
             traceback.print_exc()
         
         return response 
-    async def handle_post_response(self, data):
-        """
-        Handle post_response action by submitting task responses to Mythic C2 server.
-
-        Args:
-            data (dict): The parsed JSON data containing responses array
-        """
+    async def handle_post_response(self, data, uuid):
         try:
+            print("[DEBUG] 🔁 handle_post_response CALLED!")
             responses = data.get('responses', [])
-            payload_uuid = data.get('uuid')
+            print(f"[DEBUG] UUID: {uuid}")
+            print(f"[DEBUG] Number of responses: {len(responses)}")
 
-            if not payload_uuid:
-                print("Error: No UUID provided in post_response")
-                return
+            # Make UUID optional
+            if not uuid:
+                print("Warning: No UUID provided in post_response, processing responses without UUID")
 
-            print(f"Processing {len(responses)} task responses for payload {payload_uuid}")
+            print(f"Processing {len(responses)} task responses{' for payload ' + uuid if uuid else ''}")
 
             for response_item in responses:
                 task_id = response_item.get('task_id')
@@ -222,22 +205,22 @@ class RangoTranslator(TranslationContainer):
                     print("Warning: Response missing task_id, skipping")
                     continue
 
-                # Get the actual user_output from the agent
                 response_text = response_item.get('user_output', '')
-
+                print(f"Task ID: {task_id}, Status: {status}, Response Text: {response_text}")
+                
                 try:
-                    # Submit task response
-                    mythic_response = await MythicCallbackRPC().post_response(
+                    mythic_response_object = await MythicRPC().execute(
+                        "create_output",  
                         task_id=task_id,
-                        response=f"Error: {error_msg}" if status == 'error' and error_msg else response_text,
-                        status=status
+                        output= response_text,
                     )
 
-                    if mythic_response.success:
+                    if mythic_response_object.status == MythicStatus.Success:
                         print(f"✅ Successfully posted response for task {task_id}")
                     else:
-                        print(f"❌ Failed to post response for task {task_id}: {mythic_response.error}")
-
+                        # Access the 'Error' attribute directly
+                        print(f"❌ Failed to post response for task {task_id}:Unknown error")
+                        # --- FIX END ---
                 except Exception as e:
                     print(f"🔥 Exception posting response for task {task_id}: {e}")
                     import traceback

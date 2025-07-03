@@ -24,8 +24,7 @@ class ShellCommand(CommandBase):
     cmd = "shell"
     needs_admin = False
     help_cmd = "shell {command}"
-    description = """This runs {command} in a terminal by leveraging JXA's Application.doShellScript({command}).
-WARNING! THIS IS SINGLE THREADED, IF YOUR COMMAND HANGS, THE AGENT HANGS!"""
+    description = """This runs {command} in a terminal"""
     version = 1
     author = "@its_a_feature_"
     attackmapping = ["T1059", "T1059.004"]

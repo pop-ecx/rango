@@ -66,4 +66,14 @@ class LsCommand(CommandBase):
 
     async def process_response(self, task: PTTaskMessageAllData, response: any) -> PTTaskProcessResponseMessageResponse:
         resp = PTTaskProcessResponseMessageResponse(TaskID=task.Task.ID, Success=True)
+        # If the response is a string (from your Zig agent), set it as output
+        resp.completed = True
+        if isinstance(response, str):
+            resp.Output = response
+        # If it's a dictionary with 'user_output', use it
+        elif isinstance(response, dict) and "user_output" in response:
+            resp.Output = response["user_output"]
+        else:
+            resp.Output = str(response)
+
         return resp
