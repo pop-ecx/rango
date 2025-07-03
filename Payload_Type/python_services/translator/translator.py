@@ -4,7 +4,7 @@ import base64
 # Import necessary classes from the Mythic TranslationBase library.
 # These classes define the expected input and output types for translator functions.
 from mythic_container.TranslationBase import *
-
+from mythic_container.MythicRPC import *
 class RangoTranslator(TranslationContainer):
     """
     RangoTranslator: A custom translator for the Rango C2 agent.
@@ -91,7 +91,6 @@ class RangoTranslator(TranslationContainer):
             TrCustomMessageToMythicC2FormatMessageResponse: Response containing the message as a Python dictionary for Mythic.
         """
         response = TrCustomMessageToMythicC2FormatMessageResponse(Success=True)
-        
         try:
             received_data = None
             payload_uuid = None
@@ -137,7 +136,16 @@ class RangoTranslator(TranslationContainer):
                 # Extract UUID from JSON if not already extracted
                 payload_uuid = received_data.get('uuid')
 
-            # --- Type Conversions ---
+            # Handle post_response action
+            if received_data.get('action') == 'post_response':
+                print(f"Processing post_response action with {len(received_data.get('responses', []))} responses")
+                await self.handle_post_response(received_data)
+                
+                # Return success message for post_response (no further processing needed)
+                response.Message = {"action": "post_response", "status": "processed"}
+                return response
+
+            # --- Type Conversions for check-in and other messages ---
 
             # Convert 'integrity_level' from string to int
             if 'integrity_level' in received_data and isinstance(received_data['integrity_level'], str):
@@ -188,3 +196,54 @@ class RangoTranslator(TranslationContainer):
             traceback.print_exc()
         
         return response 
+    async def handle_post_response(self, data):
+        """
+        Handle post_response action by submitting task responses to Mythic C2 server.
+
+        Args:
+            data (dict): The parsed JSON data containing responses array
+        """
+        try:
+            responses = data.get('responses', [])
+            payload_uuid = data.get('uuid')
+
+            if not payload_uuid:
+                print("Error: No UUID provided in post_response")
+                return
+
+            print(f"Processing {len(responses)} task responses for payload {payload_uuid}")
+
+            for response_item in responses:
+                task_id = response_item.get('task_id')
+                status = response_item.get('status', 'success')
+                error_msg = response_item.get('error')
+
+                if not task_id:
+                    print("Warning: Response missing task_id, skipping")
+                    continue
+
+                # Get the actual user_output from the agent
+                response_text = response_item.get('user_output', '')
+
+                try:
+                    # Submit task response
+                    mythic_response = await MythicCallbackRPC().post_response(
+                        task_id=task_id,
+                        response=f"Error: {error_msg}" if status == 'error' and error_msg else response_text,
+                        status=status
+                    )
+
+                    if mythic_response.success:
+                        print(f"✅ Successfully posted response for task {task_id}")
+                    else:
+                        print(f"❌ Failed to post response for task {task_id}: {mythic_response.error}")
+
+                except Exception as e:
+                    print(f"🔥 Exception posting response for task {task_id}: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+        except Exception as e:
+            print(f"🔥 Error in handle_post_response: {e}")
+            import traceback
+            traceback.print_exc()

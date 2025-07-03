@@ -89,27 +89,34 @@ pub const CommandExecutor = struct {
     
     // List directory contents
     fn executeLs(self: *CommandExecutor, task: MythicTask) !MythicResponse {
-        const path = if (task.parameters.len > 0) task.parameters else ".";
-        
+        const Parameters = struct {
+            path: []const u8 = ".",
+        };
+
+        const parsed = try json.parseFromSlice(Parameters, self.allocator, task.parameters, .{});
+        defer parsed.deinit();
+
+        const path = parsed.value.path;
+
         var dir = std.fs.cwd().openDir(path, .{ .iterate = true }) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
-                .user_output = try std.fmt.allocPrint(self.allocator, "Failed to open directory {s}: {}", .{ path, err }),
+                .user_output = try std.fmt.allocPrint(self.allocator, "Failed to open directory '{s}': {}", .{ path, err }),
                 .completed = true,
                 .status = "error",
             };
         };
         defer dir.close();
-        
+
         var output = ArrayList(u8).init(self.allocator);
         defer output.deinit();
-        
+
         var iterator = dir.iterate();
         while (try iterator.next()) |entry| {
             try output.appendSlice(entry.name);
             try output.append('\n');
         }
-        
+
         return MythicResponse{
             .task_id = task.id,
             .user_output = try output.toOwnedSlice(),
@@ -117,7 +124,7 @@ pub const CommandExecutor = struct {
             .status = "completed",
         };
     }
-    
+
     // Read file contents
     fn executeCat(self: *CommandExecutor, task: MythicTask) !MythicResponse {
         if (task.parameters.len == 0) {

