@@ -3,4 +3,4 @@ __pycache__/
 main
 .idea
 mythic_go_services.bin
-python_services/rango/agent_code/.zig-cache/
+python_services/rango/agent_code/.zig-cache/*
