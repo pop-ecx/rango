@@ -26,7 +26,7 @@ class ShellCommand(CommandBase):
     help_cmd = "shell {command}"
     description = """This runs {command} in a terminal"""
     version = 1
-    author = "@its_a_feature_"
+    author = "@pop-ecx" #credits @its_a_feature_
     attackmapping = ["T1059", "T1059.004"]
     argument_class = ShellArguments
     attributes = CommandAttributes(
@@ -35,17 +35,21 @@ class ShellCommand(CommandBase):
 
     async def opsec_pre(self, taskData: PTTaskMessageAllData) -> PTTTaskOPSECPreTaskMessageResponse:
         response = PTTTaskOPSECPreTaskMessageResponse(
-            TaskID=taskData.Task.ID, Success=True, OpsecPreBlocked=True,
+            TaskID=taskData.Task.ID,
+            Success=True,
+            OpsecPreBlocked=False,
             OpsecPreBypassRole="other_operator",
-            OpsecPreMessage="Implemented, but not blocking, you're welcome!",
+            OpsecPreMessage="Shell command allowed to execute.",
         )
         return response
 
     async def opsec_post(self, taskData: PTTaskMessageAllData) -> PTTTaskOPSECPostTaskMessageResponse:
         response = PTTTaskOPSECPostTaskMessageResponse(
-            TaskID=taskData.Task.ID, Success=True, OpsecPostBlocked=True,
+            TaskID=taskData.Task.ID,
+            Success=True,
+            OpsecPostBlocked=False,
             OpsecPostBypassRole="other_operator",
-            OpsecPostMessage="Implemented, but not blocking, you're welcome! Part 2",
+            OpsecPostMessage="Shell command post-processing allowed.",
         )
         return response
 
@@ -53,6 +57,7 @@ class ShellCommand(CommandBase):
         response = MythicCommandBase.PTTaskCreateTaskingMessageResponse(
             TaskID=taskData.Task.ID,
             Success=True,
+            Parameters=taskData.args.get_arg("command"),
         )
         await SendMythicRPCArtifactCreate(MythicRPCArtifactCreateMessage(
             TaskID=taskData.Task.ID, ArtifactMessage="{}".format(taskData.args.get_arg("command")),
@@ -64,4 +69,14 @@ class ShellCommand(CommandBase):
 
     async def process_response(self, task: PTTaskMessageAllData, response: any) -> PTTaskProcessResponseMessageResponse:
         resp = PTTaskProcessResponseMessageResponse(TaskID=task.Task.ID, Success=True)
+        if isinstance(response, dict) and "user_output" in response:
+            resp.Output = response["user_output"]
+            if "status" in response and response["status"] == "error":
+                resp.Success = False
+        elif isinstance(response, str):
+            resp.Output = response
+        else:
+            resp.Output = "Unexpected response format: " + str(response)
+
+        resp.completed = True
         return resp
