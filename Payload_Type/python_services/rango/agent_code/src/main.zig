@@ -6,13 +6,11 @@ const print = std.debug.print;
 const MythicAgent = agent.MythicAgent;
 const AgentConfig = types.AgentConfig;
 
-// Main function
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
     
-    // Configuration
     const config = AgentConfig{
         .callback_host = "127.0.0.1",
         .callback_port = 80,
@@ -22,7 +20,6 @@ pub fn main() !void {
         .encrypted_exchange_check = true,
     };
     
-    // Create and run the agent
     var mythic_agent = try MythicAgent.init(allocator, config);
     defer mythic_agent.deinit();
     

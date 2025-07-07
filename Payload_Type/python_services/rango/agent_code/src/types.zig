@@ -1,6 +1,5 @@
 const std = @import("std");
 
-// Mythic message types
 pub const MessageType = enum {
     checkin,
     get_tasking,
@@ -9,7 +8,6 @@ pub const MessageType = enum {
     download,
 };
 
-// Task status
 pub const TaskStatus = enum {
     submitted,
     processing,
@@ -17,7 +15,6 @@ pub const TaskStatus = enum {
     erroragent,
 };
 
-// Mythic task structure
 pub const MythicTask = struct {
     id: []const u8,
     command: []const u8,
@@ -26,7 +23,6 @@ pub const MythicTask = struct {
     status: TaskStatus = .submitted,
 };
 
-// Mythic response structure
 pub const MythicResponse = struct {
     task_id: []const u8,
     user_output: []const u8,
@@ -35,12 +31,11 @@ pub const MythicResponse = struct {
     artifacts: []const u8 = "",
 };
 
-// Agent configuration
 pub const AgentConfig = struct {
     callback_host: []const u8,
     callback_port: u16,
     user_agent: []const u8,
-    sleep_interval: u32, // seconds
+    sleep_interval: u32,
     jitter: f32, // 0.0 to 1.0
     kill_date: ?[]const u8 = null,
     encrypted_exchange_check: bool = true,

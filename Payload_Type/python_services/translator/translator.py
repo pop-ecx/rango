@@ -49,14 +49,10 @@ class RangoTranslator(TranslationContainer):
         agent_uuid = inputMsg.UUID
         try:
             mythic_data = inputMsg.Message
-            # Mythic provides the agent's UUID for outgoing messages here
             agent_uuid = inputMsg.UUID 
 
-            # Convert the Mythic data (dictionary) to JSON string
             json_string = json.dumps(mythic_data)
             
-            # Prepend the UUID and then base64 encode the combined string
-            # Ensure both are strings for concatenation before encoding to bytes
             combined_string = f"{agent_uuid}{json_string}" 
             encoded_bytes = base64.b64encode(combined_string.encode('utf-8'))
             
@@ -83,35 +79,29 @@ class RangoTranslator(TranslationContainer):
             received_data = None
             payload_uuid = inputMsg.UUID or None
             print(f"Translating from C2 format with UUID: {payload_uuid}") 
-            # First, try to base64 decode (in case it's base64(uuid + json) format)
             try:
                 print(f"Attempting base64 decode of: {inputMsg.Message}")
                 decoded_bytes = base64.b64decode(inputMsg.Message).decode('utf-8')
                 print(f"Successfully base64 decoded. Length: {len(decoded_bytes)}")
                 
-                # Look for JSON start
                 json_start = decoded_bytes.find('{')
                 
                 if json_start == -1:
                     raise ValueError("No JSON found in base64 decoded data")
                 
-                # Extract UUID if present
                 if json_start > 0:
                     uuid_bytes = decoded_bytes[:json_start]
                     payload_uuid = uuid_bytes.decode('utf-8').strip()
                     print(f"Extracted UUID from base64: {payload_uuid}")
                 
-                # Extract and parse JSON
                 json_data_bytes = decoded_bytes[json_start:]
                 json_string = json_data_bytes.decode('utf-8')
                 received_data = json.loads(json_string)
                 print(f"Successfully parsed JSON from base64 decoded data")
                 
             except (base64.binascii.Error, ValueError, UnicodeDecodeError) as e:
-                # Base64 decode failed, try treating as direct JSON
                 print(f"Base64 decode failed ({e}), trying direct JSON parsing...")
                 
-                # Convert bytes to string if needed
                 if isinstance(inputMsg.Message, bytes):
                     json_string = inputMsg.Message.decode('utf-8')
                 else:
@@ -121,21 +111,16 @@ class RangoTranslator(TranslationContainer):
                 received_data = json.loads(json_string)
                 print(f"Successfully parsed as direct JSON")
                 
-                # Extract UUID from JSON
-                #payload_uuid = received_data.get('uuid')
                 if not payload_uuid:
                     print("Warning: No UUID found in JSON data")
 
-            # Handle post_response action
             if received_data.get('action') == 'post_response':
                 print(f"Processing post_response action with {len(received_data.get('responses', []))} responses")
                 await self.handle_post_response(received_data, payload_uuid)
                 
-                # Return success message for post_response
                 response.Message = received_data
                 return response
 
-            # Convert 'integrity_level' from string to int
             if 'integrity_level' in received_data and isinstance(received_data['integrity_level'], str):
                 try:
                     received_data['integrity_level'] = int(received_data['integrity_level'])
@@ -143,7 +128,6 @@ class RangoTranslator(TranslationContainer):
                 except ValueError:
                     print(f"Warning: Could not convert 'integrity_level' to int: {received_data['integrity_level']}")
 
-            # Convert 'pid' from string to int
             if 'pid' in received_data and isinstance(received_data['pid'], str):
                 try:
                     received_data['pid'] = int(received_data['pid'])
@@ -151,12 +135,10 @@ class RangoTranslator(TranslationContainer):
                 except ValueError:
                     print(f"Warning: Could not convert 'pid' to int: {received_data['pid']}")
             
-            # Convert 'ips' from string to list of strings
             if 'ips' in received_data and isinstance(received_data['ips'], str):
                 received_data['ips'] = [received_data['ips']]
                 print(f"Converted ips to list: {received_data['ips']}")
 
-            # Ensure UUID consistency
             if payload_uuid and "uuid" in received_data and received_data["uuid"] != payload_uuid:
                 print(f"Warning: UUID mismatch. Extracted: {payload_uuid}, From JSON: {received_data['uuid']}")
             elif payload_uuid and "uuid" not in received_data:
@@ -214,13 +196,6 @@ class RangoTranslator(TranslationContainer):
                         task_id=task_id,
                         output= response_text,
                     )
-
-                    if mythic_response_object.status == MythicStatus.Success:
-                        print(f"✅ Successfully posted response for task {task_id}")
-                    else:
-                        # Access the 'Error' attribute directly
-                        print(f"❌ Failed to post response for task {task_id}:Unknown error")
-                        # --- FIX END ---
                 except Exception as e:
                     print(f"🔥 Exception posting response for task {task_id}: {e}")
                     import traceback
