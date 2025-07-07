@@ -4,7 +4,7 @@
   <img src="https://github.com/pop-ecx/rango/blob/main/rango-2.png" />
 </p>
 
-Rango is a simple and basic Mythic C2 agent written in zig. 
+Rango is a simple and basic Mythic C2 agent written in zig for Linux systems. 
 
 It is designed as a proof of concept for testing zig as a language for writing C2 agents.
 
