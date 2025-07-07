@@ -1,6 +1,8 @@
 ## Rango 
 
-![Rango Logo](./rango-2.png)
+<p align="center">
+  <img src="https://github.com/pop-ecx/rango/blob/main/rango-2.png" />
+</p>
 
 Rango is a simple and basic Mythic C2 agent written in zig. 
 
