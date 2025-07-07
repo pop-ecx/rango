@@ -13,7 +13,7 @@ class BasicPythonAgent(PayloadType):
     supported_os = [SupportedOS.Linux]
     wrapper = False
     wrapped_payloads = []
-    note = """Simple zig implant"""
+    note = """Simple zig implant for Linux"""
     supports_dynamic_loading = False
     c2_profiles = ["http"]
     mythic_encrypts = False
