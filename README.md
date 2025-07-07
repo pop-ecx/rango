@@ -24,4 +24,5 @@ It is designed as a proof of concept for testing zig as a language for writing C
 
 
 ## Coming Features
-- [ ]File upload and download
+- ~[ ]File upload and download~
+- [ ] encryption
