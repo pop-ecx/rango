@@ -6,7 +6,7 @@ from mythic_container.MythicRPC import *
 import json
 
 
-class BasicPythonAgent(PayloadType):
+class Rango(PayloadType):
     name = "rango"
     file_extension = "exe"
     author = "@pop-ecx"
