@@ -45,7 +45,20 @@ pub const SystemInfo = struct {
     }
     
     pub fn getInternalIP(self: *SystemInfo) ![]const u8 {
-        return try self.allocator.dupe(u8, "127.0.0.1"); // Default
+        //we are going to run hostname -I and return the first IP address. I don't wanna use c library for this.
+        const result = std.process.Child.run(.{
+            .allocator = self.allocator,
+            .argv = &.{ "hostname", "-I" },
+        }) catch |err| {
+            std.debug.print("Error running hostname -I: {}\n", .{err});//I should fix this later
+            return try self.allocator.dupe(u8, "127.0.0.1");
+        };
+        var tokens = std.mem.splitAny(u8, result.stdout, " ");
+        const first_ip = tokens.first();
+        if (first_ip.len == 0) {
+            return try self.allocator.dupe(u8, "127.0.0.1");
+        }
+        return try self.allocator.dupe(u8, first_ip);
     }
     
     pub fn getProcessName(self: *SystemInfo) ![]const u8 {
