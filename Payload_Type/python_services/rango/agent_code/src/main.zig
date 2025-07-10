@@ -12,7 +12,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     
     const config = AgentConfig{
-        .callback_host = "127.0.0.1",
+        .callback_host = "http://127.0.0.1",
         .callback_port = 80,
         .user_agent = "Mozilla/5.0 (Windows NT 6.3; Trident/7.0; rv:11.0) like Gecko",
         .sleep_interval = 10,
