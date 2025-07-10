@@ -1,6 +1,7 @@
 const std = @import("std");
 const agent = @import("agent.zig");
 const types = @import("types.zig");
+const config = @import("config.zig");
 
 const print = std.debug.print;
 const MythicAgent = agent.MythicAgent;
@@ -11,16 +12,9 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
     
-    const config = AgentConfig{
-        .callback_host = "http://127.0.0.1",
-        .callback_port = 80,
-        .user_agent = "Mozilla/5.0 (Windows NT 6.3; Trident/7.0; rv:11.0) like Gecko",
-        .sleep_interval = 10,
-        .jitter = 0.1,
-        .encrypted_exchange_check = true,
-    };
+    const agent_config = config.agentConfig;
     
-    var mythic_agent = try MythicAgent.init(allocator, config);
+    var mythic_agent = try MythicAgent.init(allocator, agent_config);
     defer mythic_agent.deinit();
     
     print("[+] Starting Mythic C2 Agent\n", .{});
