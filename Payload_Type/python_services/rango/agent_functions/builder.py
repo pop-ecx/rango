@@ -8,10 +8,12 @@ import tempfile
 from distutils.dir_util import copy_tree
 import asyncio
 import os
+import sys
+import stat
 
 class Rango(PayloadType):
     name = "rango"
-    file_extension = "exe"
+    #file_extension = "exe"
     author = "@pop-ecx"
     supported_os = [SupportedOS.Linux]
     wrapper = False
@@ -123,7 +125,7 @@ pub const agentConfig: types.AgentConfig = .{{
             resp.build_stderr = stderr.decode()
             return resp
 
-        os.chmod(filename, 0o755)
+        os.chmod(filename, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)  # rwxr-xr-x
         await SendMythicRPCPayloadUpdatebuildStep(MythicRPCPayloadUpdateBuildStepMessage(
             PayloadUUID=self.uuid,
             StepName="Compiling",

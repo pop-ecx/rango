@@ -17,9 +17,6 @@ pub fn main() !void {
     var mythic_agent = try MythicAgent.init(allocator, agent_config);
     defer mythic_agent.deinit();
     
-    print("[+] Starting Mythic C2 Agent\n", .{});
-    print("[+] Zig version: 0.14.0\n", .{});
-    
     try mythic_agent.run();
 }
 
