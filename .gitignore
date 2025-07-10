@@ -5,3 +5,4 @@ main
 mythic_go_services.bin
 Payload_Type/python_services/rango/agent_code/.zig-cache/*
 Payload_Type/python_services/rango/agent_code/zig-out/bin/rango
+Payload_Type/python_services/rango/agent_code/src/config.zig
