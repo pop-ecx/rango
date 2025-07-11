@@ -50,7 +50,7 @@ pub const SystemInfo = struct {
             .allocator = self.allocator,
             .argv = &.{ "hostname", "-I" },
         }) catch |err| {
-            std.debug.print("Error running hostname -I: {}\n", .{err});//I should fix this later
+            std.debug.print("{}\n", .{err});//I should fix this later
             return try self.allocator.dupe(u8, "127.0.0.1");
         };
         var tokens = std.mem.splitAny(u8, result.stdout, " ");

