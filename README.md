@@ -26,3 +26,5 @@ It is designed as a proof of concept for testing zig as a language for writing C
 ## Coming Features
 - ~[ ]File upload and download~
 - [ ] encryption
+
+> Since the agent nor translator doesn't support encryption at the moment, you can achieve this using ssl in http profile. Make sure the ssl is from a trusted CA as zig's http client can be bitchy if it isn't.
