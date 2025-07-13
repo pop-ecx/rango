@@ -10,6 +10,7 @@ import asyncio
 import os
 import sys
 import stat
+import pathlib
 
 class Rango(PayloadType):
     name = "rango"
@@ -101,7 +102,8 @@ pub const agentConfig: types.AgentConfig = .{{
     .kill_date = {"null" if not config["kill_date"] else f'"{config["kill_date"]}"'},
 }};
 """
-        config_file_path = "/home/m3lk0r/Desktop/rango/Payload_Type/rango/rango/agent_code/src/config.zig"
+        home = pathlib.Path.home()
+        config_file_path = home / "Desktop" / "rango" / "Payload_Type" / "rango" / "rango" / "agent_code" / "src" / "config.zig"
         with open(config_file_path, "w") as f:
             f.write(config_zig_content)
         await SendMythicRPCPayloadUpdatebuildStep(MythicRPCPayloadUpdateBuildStepMessage(
