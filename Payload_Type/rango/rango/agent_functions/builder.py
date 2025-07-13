@@ -50,10 +50,10 @@ class Rango(PayloadType):
         config = {
             "payload_uuid": self.uuid,
             "callback_host": "",
+            "headers": [],
             "USER_AGENT": "",
             #"httpMethod": "POST",
             "post_uri": "",
-            "headers": [],
             "callback_port": 80,
             "ssl": False,
             "proxyEnabled": False,
@@ -74,6 +74,12 @@ class Rango(PayloadType):
             config["encrypted_exchange_check"] = True
 
         config["callback_host"] = config["callback_host"]
+        headers = config.get("headers", {})
+        if isinstance(headers, dict):
+            for key, value in headers.items():
+                if key.strip().lower() == "user-agent":
+                    config["USER_AGENT"] = value.strip()
+                    break
 
         if config["proxy_host"] != "":
             config["proxyEnabled"] = True
