@@ -75,18 +75,6 @@ pub const CryptoUtils = struct {
         };
     }
     
-    pub fn generateUUID(self: *CryptoUtils) ![]const u8 {
-        var uuid_bytes: [16]u8 = undefined;
-        crypto.random.bytes(&uuid_bytes);
-        return try std.fmt.allocPrint(self.allocator, "{x}-{x}-{x}-{x}-{x}", .{
-            std.mem.readInt(u32, uuid_bytes[0..4], .big),
-            std.mem.readInt(u16, uuid_bytes[4..6], .big),
-            std.mem.readInt(u16, uuid_bytes[6..8], .big),
-            std.mem.readInt(u16, uuid_bytes[8..10], .big),
-            std.mem.readInt(u48, uuid_bytes[10..16], .big),
-        });
-    }
-    
     pub fn generateSessionId(self: *CryptoUtils) ![]const u8 {
         var session_bytes: [8]u8 = undefined;
         crypto.random.bytes(&session_bytes);
@@ -99,19 +87,6 @@ pub const CryptoUtils = struct {
         return aes_key;
     }
     
-    pub fn generatePayloadUUID(self: *CryptoUtils) ![]const u8 {
-        var payload_bytes: [16]u8 = undefined;
-        crypto.random.bytes(&payload_bytes);
-        return try std.fmt.allocPrint(self.allocator, "{x}", .{std.mem.readInt(u128, &payload_bytes, .big)});
-    }
-    
-    pub fn encodeKey(self: *CryptoUtils, key: []const u8) ![]const u8 {
-        const encoder = base64.standard.Encoder;
-        const encoded_size = encoder.calcSize(key.len);
-        const encoded = try self.allocator.alloc(u8, encoded_size);
-        _ = encoder.encode(encoded, key);
-        return encoded;
-    }
 };
 
 pub const TimeUtils = struct {
