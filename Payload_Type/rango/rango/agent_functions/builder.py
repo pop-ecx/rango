@@ -62,7 +62,7 @@ class Rango(PayloadType):
             "proxy_pass": "",
             "callback_interval": 10,
             "callback_jitter": 0.1,
-            "kill_date": "",
+            "killdate": "",
         }
         for c2 in self.c2info:
             profile = c2.get_c2profile()
@@ -105,7 +105,7 @@ pub const agentConfig: types.AgentConfig = .{{
     .user_agent = "{config['USER_AGENT']}",
     .sleep_interval = {config['callback_interval']},
     .jitter = {config['callback_jitter']:.1f},
-    .kill_date = {"null" if not config["kill_date"] else f'"{config["kill_date"]}"'},
+    .kill_date = {"null" if not config["killdate"] else f'"{config["killdate"]}"'},
 }};
 """
         cwd = pathlib.Path.cwd()
