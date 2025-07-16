@@ -81,7 +81,7 @@ pub const MythicAgent = struct {
         while (self.is_running) {
             if (self.config.kill_date) |kill_date| {
                 if (TimeUtils.isKillDateReached(kill_date)) {
-                    break;
+                    std.posix.exit(0);//ideally we'd try to do something irreversible like self delete or whatever
                 }
             }
             

@@ -108,9 +108,68 @@ pub const TimeUtils = struct {
     }
     
     pub fn isKillDateReached(kill_date: []const u8) bool {
-        _ = kill_date;
         // Would implement date parsing and comparison
-        return false;
+        // Should ideally take kill date from config
+        // convert to epoch time, and compare to current time
+        const parsed_date = parseDate(kill_date) catch {
+            return false;
+        };
+        const current_timestamp = time.timestamp();
+        return current_timestamp >= parsed_date;
     }
+
+    fn parseDate(date_str: []const u8) !i64 {
+        //generic checks yada yada yada...
+        if (date_str.len < 10) {
+            return error.InvalidDateFormat;
+        }
+        const year = std.fmt.parseInt(i32, date_str[0..4], 10) catch {
+            return error.InvalidYear;
+        };
+        const month = std.fmt.parseInt(u8, date_str[5..7], 10) catch {
+            return error.InvalidMonth;
+        };
+        const day = std.fmt.parseInt(u8, date_str[8..10], 10) catch {
+            return error.InvalidDay;
+        };
+        if (month < 1 or month > 12) {
+            return error.InvalidMonth;
+        }
+        if (day < 1 or day > 31) {
+            return error.InvalidDay;
+        }
+        return dateToTimestamp(year, month, day);
+    }
+
+    fn dateToTimestamp(year: i32, month: u8, day: u8) i64 {
+        //True conversion happens in this function
+        //Epoch time conversion in hard
+        const days_in_month = [_]u8{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+        var total_days: i64 = 0;
+        var y: i32 = 1970;
+        while (y < year) : (y += 1) {
+            if (isLeapYear(y)) {
+                total_days += 366;
+            } else {
+                total_days += 365;
+            }
+        }
+
+        var m: u8 = 1;
+        while (m < month) : (m += 1) {
+            total_days += days_in_month[m - 1];
+            // Add extra day for February in leap years
+            if (m == 2 and isLeapYear(year)) {
+                total_days += 1;
+            }
+        }
+        total_days += @as(i64, day) - 1; // -1 because we count from day 0
+        return total_days * 24 * 60 * 60;
+    }
+    
+    fn isLeapYear(year: i32) bool {
+        return (@rem(year, 4) == 0 and @rem(year, 100) != 0) or (@rem(year, 400) == 0);
+    }
+
 };
 
