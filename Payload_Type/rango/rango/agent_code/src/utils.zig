@@ -37,7 +37,7 @@ pub const SystemInfo = struct {
     }
     
     pub fn getIntegrityLevel(self: *SystemInfo) ![]const u8 {
-        return try self.allocator.dupe(u8, "3"); // Default
+        return try self.allocator.dupe(u8, "1"); // Default
     }
     
     pub fn getExternalIP(self: *SystemInfo) ![]const u8 {
