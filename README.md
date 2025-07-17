@@ -4,7 +4,7 @@
   <img src="https://github.com/pop-ecx/rango/blob/main/rango-2.png" />
 </p>
 
-Rango is a simple and basic Mythic C2 agent written in zig for Linux systems. 
+Rango is a simple and basic Mythic C2 agent written in zig for GNU/Linux systems. 
 
 It is designed as a proof of concept for testing zig as a language for writing C2 agents.
 
@@ -26,5 +26,8 @@ It is designed as a proof of concept for testing zig as a language for writing C
 ## Coming Features
 - ~[ ]File upload and download~
 - [ ] encryption
+
+> :warning: Rango is still not mature yet. Expect some bugs.
+
 
 > Since the agent nor translator doesn't support encryption at the moment, you can achieve this using ssl in http profile. Make sure the ssl is from a trusted CA as zig's http client can be bitchy if it isn't.
