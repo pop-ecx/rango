@@ -117,15 +117,28 @@ class UploadCommand(CommandBase):
                 if file_resp.Success:
                     if len(file_resp.Files) > 0:
                         original_file_name = file_resp.Files[0].Filename
+
+                        file_id = file_resp.Files[0].AgentFileId
+                        file_download = await SendMythicRPCFileGetContent(MythicRPCFileGetContentMessage(
+                            AgentFileId=file_id,
+                            Base64=True
+                        ))
+                        if not file_download.Success:
+                            raise Exception(f"Failed to get file content: {file_download.Error}")
+                        # Inject content arg
+                        taskData.args.add_arg("content", file_download.Content)
+
                         if len(taskData.args.get_arg("remote_path")) == 0:
                             taskData.args.add_arg("remote_path", original_file_name)
                         elif taskData.args.get_arg("remote_path")[-1] == "/":
                             taskData.args.add_arg("remote_path", taskData.args.get_arg("remote_path") + original_file_name)
+
                         response.DisplayParams = f"{original_file_name} to {taskData.args.get_arg('remote_path')}"
                     else:
                         raise Exception("Failed to find that file")
                 else:
                     raise Exception("Error from Mythic trying to get file: " + str(file_resp.Error))
+
             elif groupName == "specify already uploaded file by name":
                 # we're trying to find an already existing file and use that
                 file_resp = await SendMythicRPCFileSearch(MythicRPCFileSearchMessage(
