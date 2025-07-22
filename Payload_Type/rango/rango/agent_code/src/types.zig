@@ -25,10 +25,22 @@ pub const MythicTask = struct {
 
 pub const MythicResponse = struct {
     task_id: []const u8,
-    user_output: []const u8,
+    user_output: ?[]const u8 = null,
     completed: bool,
     status: []const u8,
     artifacts: []const u8 = "",
+    download: ?DownloadInfo = null,
+};
+
+pub const DownloadInfo = struct {
+    total_chunks: u32,
+    chunk_num: ?u32 = null,
+    full_path: ?[]const u8 = null,
+    host: ?[]const u8 = null,
+    filename: ?[]const u8 = null,
+    is_screenshot: bool = false,
+    chunk_size: ?usize = null,
+    chunk_data: ?[]const u8 = null,
 };
 
 pub const AgentConfig = struct {
