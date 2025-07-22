@@ -17,4 +17,4 @@ download [file]
 download /home/john/.xsession-errors
 ```
 
-> Caution: Still experimental
+> Caution: Still experimental. Does not support chunking, Everything is sent once.
