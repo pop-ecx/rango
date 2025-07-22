@@ -303,6 +303,7 @@ pub const MythicAgent = struct {
             user_output: ?[]const u8 = null,
             completed: bool = true,
             status: []const u8,
+            download: ?types.DownloadInfo = null,
         };
 
         var responses = std.ArrayList(ResponseObj).init(self.allocator);
@@ -314,6 +315,7 @@ pub const MythicAgent = struct {
                 .user_output = response.user_output,
                 .completed = response.completed,
                 .status = response.status,
+                .download = response.download,
             });
         }
 
