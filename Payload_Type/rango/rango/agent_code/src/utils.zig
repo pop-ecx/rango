@@ -37,7 +37,12 @@ pub const SystemInfo = struct {
     }
     
     pub fn getIntegrityLevel(self: *SystemInfo) ![]const u8 {
-        return try self.allocator.dupe(u8, "1"); // Default
+        const euid = std.os.linux.geteuid();
+        if (euid == 0) {
+            return try self.allocator.dupe(u8, "4"); //high integrity to mean process is running as root
+        } else {
+            return try self.allocator.dupe(u8, "1"); //low integrity, process is normal user.
+        }
     }
     
     pub fn getExternalIP(self: *SystemInfo) ![]const u8 {
