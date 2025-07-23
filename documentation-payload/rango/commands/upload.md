@@ -17,4 +17,4 @@ upload [file]
 upload /home/john/.ssh-id.rsa
 ```
 
-> Caution: Still experimental. Implementation of unicode escaping coming.
+> Caution: Still experimental.

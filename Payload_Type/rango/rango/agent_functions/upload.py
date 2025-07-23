@@ -1,7 +1,7 @@
 from mythic_container.MythicCommandBase import *
 from mythic_container.MythicRPC import *
 import sys
-
+import base64
 
 class UploadArguments(TaskArguments):
     def __init__(self, command_line, **kwargs):
@@ -117,21 +117,27 @@ class UploadCommand(CommandBase):
                 if file_resp.Success:
                     if len(file_resp.Files) > 0:
                         original_file_name = file_resp.Files[0].Filename
-
                         file_id = file_resp.Files[0].AgentFileId
+
                         file_download = await SendMythicRPCFileGetContent(MythicRPCFileGetContentMessage(
                             AgentFileId=file_id,
                             Base64=True
                         ))
                         if not file_download.Success:
                             raise Exception(f"Failed to get file content: {file_download.Error}")
-                        # Inject content arg
-                        taskData.args.add_arg("content", file_download.Content)
+
+                        content = file_download.Content
+                        if isinstance(content, bytes):
+                            content = base64.b64encode(content).decode('utf-8')
+                        if not isinstance(content, str):
+                            raise Exception(f"Expected string for file content, got {type(content)}")
+
+                        taskData.args.add_arg("content", content)
 
                         if len(taskData.args.get_arg("remote_path")) == 0:
-                            taskData.args.add_arg("remote_path", original_file_name)
+                            taskData.args.set_arg("remote_path", original_file_name)
                         elif taskData.args.get_arg("remote_path")[-1] == "/":
-                            taskData.args.add_arg("remote_path", taskData.args.get_arg("remote_path") + original_file_name)
+                            taskData.args.set_arg("remote_path", taskData.args.get_arg("remote_path") + original_file_name)
 
                         response.DisplayParams = f"{original_file_name} to {taskData.args.get_arg('remote_path')}"
                     else:
@@ -140,7 +146,6 @@ class UploadCommand(CommandBase):
                     raise Exception("Error from Mythic trying to get file: " + str(file_resp.Error))
 
             elif groupName == "specify already uploaded file by name":
-                # we're trying to find an already existing file and use that
                 file_resp = await SendMythicRPCFileSearch(MythicRPCFileSearchMessage(
                     TaskID=taskData.Task.ID,
                     Filename=taskData.args.get_arg("filename"),
@@ -149,10 +154,27 @@ class UploadCommand(CommandBase):
                 ))
                 if file_resp.Success:
                     if len(file_resp.Files) > 0:
-                        taskData.args.add_arg("file", file_resp.Files[0].AgentFileId)
+                        file_id = file_resp.Files[0].AgentFileId
+                        original_file_name = file_resp.Files[0].Filename
+
+                        file_download = await SendMythicRPCFileGetContent(MythicRPCFileGetContentMessage(
+                            AgentFileId=file_id,
+                            Base64=True
+                        ))
+                        if not file_download.Success:
+                            raise Exception(f"Failed to get file content: {file_download.Error}")
+
+                        content = file_download.Content
+                        if isinstance(content, bytes):
+                            content = base64.b64encode(content).decode('utf-8')
+                        if not isinstance(content, str):
+                            raise Exception(f"Expected string for file content, got {type(content)}")
+
+                        taskData.args.add_arg("content", content)
+                        taskData.args.set_arg("file", file_id)
                         taskData.args.remove_arg("filename")
-                        response.DisplayParams = f"existing {file_resp.Files[0].Filename} to {taskData.args.get_arg('remote_path')}"
-                    elif len(file_resp.Files) == 0:
+                        response.DisplayParams = f"existing {original_file_name} to {taskData.args.get_arg('remote_path')}"
+                    else:
                         raise Exception("Failed to find the named file. Have you uploaded it before? Did it get deleted?")
                 else:
                     raise Exception("Error from Mythic trying to search files:\n" + str(file_resp.Error))
