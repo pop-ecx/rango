@@ -218,7 +218,6 @@ pub const CommandExecutor = struct {
             std.debug.print("", .{});
             return error.InvalidBase64;
         };
-        std.debug.print("decoded content: {s}", .{decoded_content});
 
         if (std.mem.eql(u8, remote_path, "/")) {
             const file = try std.fs.createFileAbsolute(remote_path, .{});
