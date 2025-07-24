@@ -45,7 +45,7 @@ pub const NetworkClient = struct {
         try req.finish();
         try req.wait();
         
-        const body = try req.reader().readAllAlloc(self.allocator, 1024 * 1024);
+        const body = try req.reader().readAllAlloc(self.allocator, 10 * 1024 * 1024);
         return body;
     }
 };
