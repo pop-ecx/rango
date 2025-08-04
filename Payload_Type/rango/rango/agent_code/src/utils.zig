@@ -199,7 +199,7 @@ pub const PersistUtils = struct {
         }
         const combined = try std.mem.concat(allocator, u8, &[_][]const u8{ existing.stdout, cron_line });
         defer allocator.free(combined);
-    
+
         var write_proc = std.process.Child.init(&[_][]const u8{"crontab", "-"}, allocator);
         write_proc.stdin_behavior = .Pipe;
         try write_proc.spawn();
