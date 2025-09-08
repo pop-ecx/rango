@@ -27,25 +27,22 @@ pub const NetworkClient = struct {
         const uri_str = try std.fmt.allocPrint(self.allocator, "{s}:{d}/{s}", .{ self.config.callback_host, self.config.callback_port, endpoint });
         defer self.allocator.free(uri_str);
         
-        const uri = std.Uri.parse(uri_str) catch return error.InvalidUri;
-        
-        var header_buffer: [1024]u8 = undefined;
-        var req = self.client.open(.POST, uri, .{
-            .server_header_buffer = &header_buffer,
-            .extra_headers = &.{
-                .{ .name = "user-agent", .value = self.config.user_agent },
-                .{ .name = "content-type", .value = "application/json" },
-            },
-        }) catch return error.RequestFailed;
-        defer req.deinit();
-        
-        req.transfer_encoding = .{ .content_length = data.len };
-        try req.send();
-        try req.writeAll(data);
-        try req.finish();
-        try req.wait();
-        
-        const body = try req.reader().readAllAlloc(self.allocator, 10 * 1024 * 1024);
-        return body;
+        const extra_headers = &[_]http.Header{
+            .{ .name = "user-agent", .value = self.config.user_agent },
+            .{ .name = "content-type", .value = "application/json" },
+        };
+
+        var response_body = std.ArrayList(u8){};
+        errdefer response_body.deinit(self.allocator);
+
+        _ = try self.client.fetch(.{
+            .method = .POST,
+            .location = .{ .url = uri_str },
+            .extra_headers = extra_headers,
+            .payload = data,
+            //.response_storage = .{ .dynamic = &response_body },
+        });
+
+        return try response_body.toOwnedSlice(self.allocator);
     }
 };

