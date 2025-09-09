@@ -32,17 +32,17 @@ pub const NetworkClient = struct {
             .{ .name = "content-type", .value = "application/json" },
         };
 
-        var response_body = std.ArrayList(u8){};
-        errdefer response_body.deinit(self.allocator);
+        var response_body = std.Io.Writer.Allocating.init(self.allocator);
+        errdefer response_body.deinit();
 
         _ = try self.client.fetch(.{
             .method = .POST,
             .location = .{ .url = uri_str },
             .extra_headers = extra_headers,
             .payload = data,
-            //.response_storage = .{ .dynamic = &response_body },
+            .response_writer = &response_body.writer,
         });
 
-        return try response_body.toOwnedSlice(self.allocator);
+        return try response_body.toOwnedSlice();
     }
 };
