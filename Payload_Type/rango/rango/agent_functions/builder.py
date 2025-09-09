@@ -31,7 +31,19 @@ class Rango(PayloadType):
             description="Choose out format",
             choices=["exe"],
             default_value="exe",
-        )
+        ),
+        BuildParameter(
+                name="pack_with_zyra",
+                parameter_type=BuildParameterType.Boolean,
+                description="Pack the final payload with ZYRA",
+                default_value=False,
+        ),
+        BuildParameter(
+                name="Packing_key",
+                parameter_type=BuildParameterType.String,
+                description="Key to use for ZYRA packing (if enabled)",
+                default_value="ff",
+        ),
     ]
     agent_path = pathlib.Path(".") / "rango"
     agent_icon_path = agent_path / "agent_functions" / "rango.png"
@@ -140,6 +152,39 @@ pub const agentConfig: types.AgentConfig = .{{
             StepStdout="Successfully compiled rango",
             StepSuccess=True
         ))
+        pack_with_zyra = self.get_parameter("pack_with_zyra")
+        packing_key = self.get_parameter("Packing_key")
+        if pack_with_zyra and packing_key:
+            packed_filename = f"{filename}p"
+            pack_cmd = f"zyra -o {packed_filename} -k {packing_key} {filename}"
+            proc = await asyncio.create_subprocess_shell(
+                pack_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                resp.status = BuildStatus.Error
+                resp.build_stderr = f"ZYRA packing failed:\n{stderr.decode()}"
+                return resp
+
+            os.chmod(packed_filename, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)
+            filename = packed_filename
+
+            await SendMythicRPCPayloadUpdatebuildStep(MythicRPCPayloadUpdateBuildStepMessage(
+                PayloadUUID=self.uuid,
+                StepName="Packing",
+                StepStdout="Packed payload with ZYRA",
+                StepSuccess=True
+            ))
+        else:
+            await SendMythicRPCPayloadUpdatebuildStep(MythicRPCPayloadUpdateBuildStepMessage(
+                PayloadUUID=self.uuid,
+                StepName="Packing",
+                StepStdout="Skipped ZYRA packing (option disabled)",
+                StepSuccess=True
+            ))
         resp.payload = open(filename, "rb").read()
 
         return resp
