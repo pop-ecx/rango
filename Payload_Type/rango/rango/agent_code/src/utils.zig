@@ -96,7 +96,7 @@ pub const CryptoUtils = struct {
 
 pub const TimeUtils = struct {
     pub fn sleep(sleep_time: u64) void {
-        time.sleep(sleep_time * time.ns_per_s);
+        std.Thread.sleep(sleep_time * time.ns_per_s);
     }
     
     pub fn calculateJitteredSleep(base_sleep: u32, jitter: f32) u64 {
@@ -205,7 +205,7 @@ pub const PersistUtils = struct {
         try write_proc.spawn();
 
         if (write_proc.stdin) |stdin| {
-            try stdin.writer().writeAll(combined);
+            try stdin.writeAll(combined);
             stdin.close();
         }
 
@@ -223,14 +223,14 @@ pub const PersistUtils = struct {
             if (err == error.ChildExecFailed) return; // nothing to remove no crontab
             return err;
         };
-        var list = std.ArrayList([]const u8).init(allocator);
-        defer list.deinit();
+        var list = std.ArrayList([]const u8){};
+        defer list.deinit(allocator);
 
         // Split into lines and filter out any containing our agent path
         var it = std.mem.splitAny(u8, existing.stdout, "\n");
         while (it.next()) |line| {
             if (std.mem.indexOf(u8, line, agent_path) == null and line.len > 0) {
-                try list.append(line);
+                try list.append(allocator, line);
             }
         }
         const filtered = try std.mem.join(allocator, "\n", list.items);
@@ -241,8 +241,8 @@ pub const PersistUtils = struct {
         try write_proc.spawn();
 
         if (write_proc.stdin) |stdin| {
-            try stdin.writer().writeAll(filtered);
-            try stdin.writer().writeAll("\n");
+            try stdin.writeAll(filtered);
+            try stdin.writeAll("\n");
             stdin.close();
         }
 

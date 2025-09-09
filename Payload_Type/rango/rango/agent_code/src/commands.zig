@@ -118,18 +118,18 @@ pub const CommandExecutor = struct {
         };
         defer dir.close();
 
-        var output = ArrayList(u8).init(self.allocator);
-        defer output.deinit();
+        var output = ArrayList(u8){};
+        defer output.deinit(self.allocator);
 
         var iterator = dir.iterate();
         while (try iterator.next()) |entry| {
-            try output.appendSlice(entry.name);
-            try output.append('\n');
+            try output.appendSlice(self.allocator, entry.name);
+            try output.append(self.allocator, '\n');
         }
 
         return MythicResponse{
             .task_id = task.id,
-            .user_output = try output.toOwnedSlice(),
+            .user_output = try output.toOwnedSlice(self.allocator),
             .completed = true,
             .status = "completed",
         };
