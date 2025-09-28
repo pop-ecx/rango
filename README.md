@@ -43,4 +43,4 @@ sudo ./mythic-cli install github https://github.com/pop-ecx/rango.git
 
 If you want to use the agent pre-[writergate](https://ziglang.org/download/0.15.1/release-notes.html#Writergate), go to the 0.14.0 branch
 
-Would you like to contribute? Feel free to open a PR or an issue (no promises on when I will be able to work on it though).
+Would you like to contribute? Check out the [contributing guidelines](CONTRIBUTING.md).
