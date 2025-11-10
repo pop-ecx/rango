@@ -1,8 +1,10 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const crypto = std.crypto;
 const base64 = std.base64;
 const time = std.time;
 const Allocator = std.mem.Allocator;
+extern "shell32" fn IsUserAnAdmin() callconv(.winapi) bool;
 
 pub const SystemInfo = struct {
     allocator: Allocator,
@@ -14,34 +16,73 @@ pub const SystemInfo = struct {
     }
     
     pub fn getCurrentUser(self: *SystemInfo) ![]const u8 {
-        const result = std.posix.getenv("USER") orelse
-            return try self.allocator.dupe(u8, "unknown");
-        
-        return try self.allocator.dupe(u8, result);
+        if (builtin.os.tag == .windows) {
+            const uname = try std.unicode.utf8ToUtf16LeAlloc(self.allocator, "USERNAME");
+            defer self.allocator.free(uname);
+            const result = std.process.getenvW(uname) orelse
+                return try self.allocator.dupe(u8, "unknown");
+            return try self.allocator.dupe(u8, result);
+        } else {
+            const result = std.posix.getenv("USER") orelse
+                return try self.allocator.dupe(u8, "unknown");
+            return try self.allocator.dupe(u8, result);
+        }
     }
     
     pub fn getHostname(self: *SystemInfo) ![]const u8 {
-        var hostname_buf: [64]u8 = undefined;
-        const result = std.posix.gethostname(&hostname_buf) catch "Unknown";
-        
-        return try self.allocator.dupe(u8, result);
+        if (builtin.os.tag == .windows) {
+            const hostname = try std.unicode.utf8ToUtf16LeAlloc(self.allocator, "COMPUTERNAME");
+            defer self.allocator.free(hostname);
+            const result = std.process.getenvW(hostname) orelse
+                return try self.allocator.dupe(u8, "Unknown");
+            return try self.allocator.dupe(u8, result);
+        } else {
+            var hostname_buf: [64]u8 = undefined;
+                const result = std.posix.gethostname(&hostname_buf) catch "Unknown";
+            return try self.allocator.dupe(u8, result);
+        }
     }
     
     pub fn getPid(self: *SystemInfo) ![]const u8 {
-        const pid = std.os.linux.getpid();
-        return try std.fmt.allocPrint(self.allocator, "{d}", .{pid});
+        if (builtin.os.tag == .windows) {
+            const pid = std.os.windows.GetCurrentProcessId();
+            return try std.fmt.allocPrint(self.allocator, "{d}", .{pid});
+        } else {
+            const pid = std.os.linux.getpid();
+            return try std.fmt.allocPrint(self.allocator, "{d}", .{pid});
+        }
     }
     
     pub fn getDomain(self: *SystemInfo) ![]const u8 {
-        return try self.allocator.dupe(u8, "WORKGROUP"); // Default
+        if (builtin.os.tag == .windows) {
+            const domain = try std.unicode.utf8ToUtf16LeAlloc(self.allocator, "USERDOMAIN");
+            defer self.allocator.free(domain);
+            const result = std.process.getenvW(domain) orelse
+                return try self.allocator.dupe(u8, "WORKGROUP");
+            return try self.allocator.dupe(u8, result);
+        } else {
+            return try self.allocator.dupe(u8, "WORKGROUP"); // Default
+        }
     }
     
     pub fn getIntegrityLevel(self: *SystemInfo) ![]const u8 {
-        const euid = std.os.linux.geteuid();
-        if (euid == 0) {
-            return try self.allocator.dupe(u8, "4"); //high integrity to mean process is running as root
+        if (builtin.os.tag == .windows) {
+            //Windows docs encourage using something else but who has time for that?
+            //This function is a wrapper for CheckTokenMembership.
+            //It is recommended to call that function directly to determine
+            //Administrator group status rather than calling IsUserAnAdmin
+            if (IsUserAnAdmin() != 0) {
+                return try self.allocator.dupe(u8, "4"); //high integrity
+            } else {
+                return try self.allocator.dupe(u8, "1"); //low integrity
+            }
         } else {
-            return try self.allocator.dupe(u8, "1"); //low integrity, process is normal user.
+            const euid = std.os.linux.geteuid();
+            if (euid == 0) {
+                return try self.allocator.dupe(u8, "4"); //high integrity to mean process is running as root
+            } else {
+                return try self.allocator.dupe(u8, "1"); //low integrity, process is normal user.
+            }
         }
     }
     
@@ -50,20 +91,36 @@ pub const SystemInfo = struct {
     }
     
     pub fn getInternalIP(self: *SystemInfo) ![]const u8 {
-        //we are going to run hostname -I and return the first IP address. I don't wanna use c library for this.
-        const result = std.process.Child.run(.{
-            .allocator = self.allocator,
-            .argv = &.{ "hostname", "-I" },
-        }) catch |err| {
-            std.debug.print("{}\n", .{err});//I should fix this later
-            return try self.allocator.dupe(u8, "127.0.0.1");
-        };
-        var tokens = std.mem.splitAny(u8, result.stdout, " ");
-        const first_ip = tokens.first();
-        if (first_ip.len == 0) {
-            return try self.allocator.dupe(u8, "127.0.0.1");
+        if (builtin.os.tag == .windows) {
+            const result = std.process.Child.run(.{
+                .allocator = self.allocator,
+                .argv = &.{ "ipconfig" },
+            }) catch |err| {
+                std.debug.print("{}\n", .{err});
+                return try self.allocator.dupe(u8, "127.0.0.1");
+            };
+            var tokens = std.mem.split(u8, result.stdout, "\n");
+            const first_ip = tokens.first();
+            if (first_ip.len == 0) {
+                return try self.allocator.dupe(u8, "127.0.0.1");
+            }
+            return try self.allocator.dupe(u8, first_ip);
+        } else {
+            //we are going to run hostname -I and return the first IP address. I don't wanna use c library for this.
+            const result = std.process.Child.run(.{
+                .allocator = self.allocator,
+                .argv = &.{ "hostname", "-I" },
+            }) catch |err| {
+                std.debug.print("{}\n", .{err});//I should fix this later
+                return try self.allocator.dupe(u8, "127.0.0.1");
+            };
+            var tokens = std.mem.splitAny(u8, result.stdout, " ");
+            const first_ip = tokens.first();
+            if (first_ip.len == 0) {
+                return try self.allocator.dupe(u8, "127.0.0.1");
+            }
+            return try self.allocator.dupe(u8, first_ip);
         }
-        return try self.allocator.dupe(u8, first_ip);
     }
     
     pub fn getProcessName(self: *SystemInfo) ![]const u8 {
