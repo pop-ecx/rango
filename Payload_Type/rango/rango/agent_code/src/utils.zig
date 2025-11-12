@@ -16,26 +16,24 @@ pub const SystemInfo = struct {
     }
     
     pub fn getCurrentUser(self: *SystemInfo) ![]const u8 {
-        if (builtin.os.tag == .windows) {
-            const uname = try std.unicode.utf8ToUtf16LeAlloc(self.allocator, "USERNAME");
-            defer self.allocator.free(uname);
-            const result = std.process.getenvW(uname) orelse
-                return try self.allocator.dupe(u8, "unknown");
-            return try self.allocator.dupe(u8, result);
-        } else {
-            const result = std.posix.getenv("USER") orelse
-                return try self.allocator.dupe(u8, "unknown");
-            return try self.allocator.dupe(u8, result);
-        }
+        const key = if (builtin.os.tag == .windows) "USERNAME" else "USER";
+        // Using getEnvVarOwned since the windows API would've killed me
+        return std.process.getEnvVarOwned(self.allocator, key) catch |err| {
+            if (err == error.EnvironmentVariableNotFound) {
+                return self.allocator.dupe(u8, "unknown");
+            }
+            return err;
+        };
     }
     
     pub fn getHostname(self: *SystemInfo) ![]const u8 {
         if (builtin.os.tag == .windows) {
-            const hostname = try std.unicode.utf8ToUtf16LeAlloc(self.allocator, "COMPUTERNAME");
-            defer self.allocator.free(hostname);
-            const result = std.process.getenvW(hostname) orelse
-                return try self.allocator.dupe(u8, "Unknown");
-            return try self.allocator.dupe(u8, result);
+            return std.process.getEnvVarOwned(self.allocator, "COMPUTERNAME") catch |err| {
+                if (err == error.EnvironmentVariableNotFound) {
+                    return self.allocator.dupe(u8, "Unknown");
+                }
+                return err;
+            };
         } else {
             var hostname_buf: [64]u8 = undefined;
                 const result = std.posix.gethostname(&hostname_buf) catch "Unknown";
@@ -55,11 +53,12 @@ pub const SystemInfo = struct {
     
     pub fn getDomain(self: *SystemInfo) ![]const u8 {
         if (builtin.os.tag == .windows) {
-            const domain = try std.unicode.utf8ToUtf16LeAlloc(self.allocator, "USERDOMAIN");
-            defer self.allocator.free(domain);
-            const result = std.process.getenvW(domain) orelse
-                return try self.allocator.dupe(u8, "WORKGROUP");
-            return try self.allocator.dupe(u8, result);
+            return std.process.getEnvVarOwned(self.allocator, "USERDOMAIN") catch |err| {
+                if (err == error.EnvironmentVariableNotFound) {
+                    return try self.allocator.dupe(u8, "WORKGROUP");
+                }
+                return err;
+            };
         } else {
             return try self.allocator.dupe(u8, "WORKGROUP"); // Default
         }
@@ -71,7 +70,7 @@ pub const SystemInfo = struct {
             //This function is a wrapper for CheckTokenMembership.
             //It is recommended to call that function directly to determine
             //Administrator group status rather than calling IsUserAnAdmin
-            if (IsUserAnAdmin() != 0) {
+            if (IsUserAnAdmin() != true) {
                 return try self.allocator.dupe(u8, "4"); //high integrity
             } else {
                 return try self.allocator.dupe(u8, "1"); //low integrity
@@ -99,7 +98,7 @@ pub const SystemInfo = struct {
                 std.debug.print("{}\n", .{err});
                 return try self.allocator.dupe(u8, "127.0.0.1");
             };
-            var tokens = std.mem.split(u8, result.stdout, "\n");
+            var tokens = std.mem.splitAny(u8, result.stdout, "\n");
             const first_ip = tokens.first();
             if (first_ip.len == 0) {
                 return try self.allocator.dupe(u8, "127.0.0.1");
