@@ -151,7 +151,7 @@ pub const agentConfig: types.AgentConfig = .{{
             StepSuccess=True
         ))
         command = f"zig build -Dtarget={zig_target} --release=small"
-        filename = str(self.agent_code_path / "zig-out" / "bin" / "rango")
+        filename = str(self.agent_code_path / "zig-out" / "bin" / binary_name)
         proc = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
