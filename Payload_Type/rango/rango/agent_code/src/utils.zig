@@ -17,7 +17,7 @@ pub const SystemInfo = struct {
     
     pub fn getCurrentUser(self: *SystemInfo) ![]const u8 {
         const key = if (builtin.os.tag == .windows) "USERNAME" else "USER";
-        // Using getEnvVarOwned since the windows API would've killed me
+        // Using getEnvVarOwned since the windows API is killing me
         return std.process.getEnvVarOwned(self.allocator, key) catch |err| {
             if (err == error.EnvironmentVariableNotFound) {
                 return self.allocator.dupe(u8, "unknown");
@@ -236,72 +236,112 @@ pub const TimeUtils = struct {
 
 pub const PersistUtils = struct {
     pub fn install_cron(agent_path: []const u8, allocator: std.mem.Allocator) !void {
-        const existing = std.process.Child.run(.{
-            .allocator = allocator,
-            .argv = &.{ "crontab", "-l" },
-            .max_output_bytes = 8192,
-        }) catch |err| {
-            // proceed with empty if none exists(crontab)
-            if (err == error.ChildExecFailed) {
-                return error.CrontabNotAvailable;
+        if (builtin.os.tag == .windows) {
+            const existing = std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &.{ "schtasks", "/Query", "/TN", "Rango" },
+            }) catch |err| switch (err) {
+                error.AccessDenied => return error.AccessDenied,
+                else => return err,
+            };
+            if (existing.term.Exited == 0) {
+                if (std.mem.indexOf(u8, existing.stdout, agent_path) != null or
+                    std.mem.indexOf(u8, existing.stderr, agent_path) != null) {
+                    return error.AlreadyPersistent;
+                }
             }
-            return err;
-        };
-        const cron_line = try std.fmt.allocPrint(allocator, "@reboot {s} &\n", .{agent_path});
-        defer allocator.free(cron_line);
+            const cmd = try std.fmt.allocPrint(allocator,
+                "schtasks /Create /SC ONSTART /TN Rango /TR \"{s}\" /RL HIGHEST /F",
+                .{agent_path});
+            defer allocator.free(cmd);
+            const result = std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &.{ "cmd.exe", "/C", cmd },
+            }) catch |err| {
+                return err;
+            };
+            if (result.term.Exited != 0) {
+                return error.SchtasksCreateFailed;
+            }
+        } else {
 
-        if (std.mem.indexOf(u8, existing.stdout, agent_path) != null) {
-            return; // already persistent
-        }
-        const combined = try std.mem.concat(allocator, u8, &[_][]const u8{ existing.stdout, cron_line });
-        defer allocator.free(combined);
+            const existing = std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &.{ "crontab", "-l" },
+                .max_output_bytes = 8192,
+            }) catch |err| {
+                // proceed with empty if none exists(crontab)
+                if (err == error.ChildExecFailed) {
+                    return error.CrontabNotAvailable;
+                }
+                return err;
+            };
+            const cron_line = try std.fmt.allocPrint(allocator, "@reboot {s} &\n", .{agent_path});
+            defer allocator.free(cron_line);
 
-        var write_proc = std.process.Child.init(&[_][]const u8{"crontab", "-"}, allocator);
-        write_proc.stdin_behavior = .Pipe;
-        try write_proc.spawn();
+            if (std.mem.indexOf(u8, existing.stdout, agent_path) != null) {
+                return; // already persistent
+            }
+            const combined = try std.mem.concat(allocator, u8, &[_][]const u8{ existing.stdout, cron_line });
+            defer allocator.free(combined);
 
-        if (write_proc.stdin) |stdin| {
-            try stdin.writeAll(combined);
-            stdin.close();
-        }
+            var write_proc = std.process.Child.init(&[_][]const u8{"crontab", "-"}, allocator);
+            write_proc.stdin_behavior = .Pipe;
+            try write_proc.spawn();
+
+            if (write_proc.stdin) |stdin| {
+                try stdin.writeAll(combined);
+                stdin.close();
+            }
 
          // _ = write_proc.wait() catch |err| {
          //   std.log.err("Failed to write crontab: {}", .{err});
          //   return error.CrontabWriteFailed; // Should handle this properly because of a panic in my tests:(
         //};
+        }
     }
     pub fn remove_cron_entry(agent_path: []const u8, allocator: std.mem.Allocator) !void {
-        const existing = std.process.Child.run(.{
-            .allocator = allocator,
-            .argv = &.{ "crontab", "-l" },
-            .max_output_bytes = 8192,
-        }) catch |err| {
-            if (err == error.ChildExecFailed) return; // nothing to remove no crontab
-            return err;
-        };
-        var list = std.ArrayList([]const u8){};
-        defer list.deinit(allocator);
+        if (builtin.os.tag == .windows) {
+            const existing = try std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &.{ "schtasks", "/Delete", "/TN", "Rango", "/F" },
+            });
+            // What if task is not found?
+            if (existing.term.Exited != 0 ) {
+                return error.SchtasksDeleteFailed;
+            }
+        } else {
+            const existing = std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &.{ "crontab", "-l" },
+                .max_output_bytes = 8192,
+            }) catch |err| {
+                if (err == error.ChildExecFailed) return; // nothing to remove no crontab
+                return err;
+            };
+            var list = std.ArrayList([]const u8){};
+            defer list.deinit(allocator);
 
-        // Split into lines and filter out any containing our agent path
-        var it = std.mem.splitAny(u8, existing.stdout, "\n");
-        while (it.next()) |line| {
-            if (std.mem.indexOf(u8, line, agent_path) == null and line.len > 0) {
-                try list.append(allocator, line);
+            // Split into lines and filter out any containing our agent path
+            var it = std.mem.splitAny(u8, existing.stdout, "\n");
+            while (it.next()) |line| {
+                if (std.mem.indexOf(u8, line, agent_path) == null and line.len > 0) {
+                    try list.append(allocator, line);
+                }
+            }
+            const filtered = try std.mem.join(allocator, "\n", list.items);
+            defer allocator.free(filtered);
+
+            var write_proc = std.process.Child.init(&[_][]const u8{"crontab", "-"}, allocator);
+            write_proc.stdin_behavior = .Pipe;
+            try write_proc.spawn();
+
+            if (write_proc.stdin) |stdin| {
+                try stdin.writeAll(filtered);
+                try stdin.writeAll("\n");
+                stdin.close();
             }
         }
-        const filtered = try std.mem.join(allocator, "\n", list.items);
-        defer allocator.free(filtered);
-
-        var write_proc = std.process.Child.init(&[_][]const u8{"crontab", "-"}, allocator);
-        write_proc.stdin_behavior = .Pipe;
-        try write_proc.spawn();
-
-        if (write_proc.stdin) |stdin| {
-            try stdin.writeAll(filtered);
-            try stdin.writeAll("\n");
-            stdin.close();
-        }
-
         //_ = write_proc.wait() catch {};//line caused a panic in my tests, commenting out for now
     }
 

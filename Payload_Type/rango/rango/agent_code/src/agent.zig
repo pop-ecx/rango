@@ -100,7 +100,7 @@ pub const MythicAgent = struct {
                     std.fs.deleteFileAbsolute(exe_path) catch |err| {
                         print("{}", .{err});
                     };
-                    std.posix.exit(0);
+                    std.process.exit(0);
                 }
             }
 
