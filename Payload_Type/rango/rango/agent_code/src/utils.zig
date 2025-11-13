@@ -100,6 +100,15 @@ pub const SystemInfo = struct {
             };
             var tokens = std.mem.splitAny(u8, result.stdout, "\n");
             const first_ip = tokens.first();
+            while (tokens.next()) |line| {
+                if (std.mem.indexOf(u8, line, "IPv4 Address") != null) {
+                    const ip_start = std.mem.indexOf(u8, line, ":") orelse continue;
+                    const ip_str = std.mem.trim(u8, line[ip_start + 1 ..], " \t\r\n");
+                    if (ip_str.len > 0 and std.mem.indexOf(u8, ip_str, ".") != null) {
+                        return try self.allocator.dupe(u8, ip_str);
+                    }
+                }
+            }
             if (first_ip.len == 0) {
                 return try self.allocator.dupe(u8, "127.0.0.1");
             }
