@@ -295,8 +295,9 @@ pub const PersistUtils = struct {
             });
 
             if (result.term.Exited != 0) {
-                return error.SchtasksCreateFailed;
+                return error.RegistryWriteFailed;
             }
+
         } else {
 
             const existing = std.process.Child.run(.{
