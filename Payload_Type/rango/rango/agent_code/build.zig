@@ -1,16 +1,8 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{
-        .default_target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .linux,
-            .abi = .gnu,
-        },
-    });
-    const optimize = b.standardOptimizeOption(.{
-        .preferred_optimize_mode = .ReleaseSmall,
-    });
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -22,6 +14,10 @@ pub fn build(b: *std.Build) void {
         .name = "rango",
         .root_module = exe_mod,
     });
+
+    if (target.result.os.tag == .windows) {
+        exe.subsystem = .Windows;
+    }
 
     b.installArtifact(exe);
 
