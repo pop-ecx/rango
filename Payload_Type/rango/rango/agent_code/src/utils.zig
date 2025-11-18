@@ -246,18 +246,20 @@ pub const TimeUtils = struct {
 pub const PersistUtils = struct {
     pub fn install_cron(agent_path: []const u8, allocator: std.mem.Allocator) !void {
         if (builtin.os.tag == .windows) {
-            const existing = std.process.Child.run(.{
+            const existing = try std.process.Child.run(.{
                 .allocator = allocator,
-                .argv = &.{ "schtasks", "/Query", "/TN", "Rango" },
-            }) catch |err| switch (err) {
-                error.AccessDenied => return error.AccessDenied,
-                else => return err,
-            };
-            if (existing.term.Exited == 0) {
-                if (std.mem.indexOf(u8, existing.stdout, agent_path) != null or
-                    std.mem.indexOf(u8, existing.stderr, agent_path) != null) {
-                    return error.AlreadyPersistent;
-                }
+                .argv = &.{
+                    "reg.exe",
+                    "query",
+                    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    "/v",
+                    "Rango",
+                },
+            });
+
+            const reg_exists = existing.term.Exited == 0;
+            if (reg_exists and std.mem.indexOf(u8, existing.stdout, agent_path) != null) {
+                return error.AlreadyPersistent;
             }
             const cmd = try std.fmt.allocPrint(allocator,
                 "schtasks /Create /SC ONSTART /TN Rango /TR \"{s}\" /RL HIGHEST /F",
