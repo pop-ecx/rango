@@ -339,11 +339,17 @@ pub const PersistUtils = struct {
         if (builtin.os.tag == .windows) {
             const existing = try std.process.Child.run(.{
                 .allocator = allocator,
-                .argv = &.{ "schtasks", "/Delete", "/TN", "Rango", "/F" },
+                .argv = &.{
+                    "reg.exe",
+                    "delete",
+                    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    "/v",
+                    "Rango",
+                    "/f"
+                },
             });
-            // What if task is not found?
-            if (existing.term.Exited != 0 ) {
-                return error.SchtasksDeleteFailed;
+            if (existing.term.Exited != 0) {
+                return error.RegistryDeleteFailed;
             }
         } else {
             const existing = std.process.Child.run(.{
