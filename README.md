@@ -36,7 +36,9 @@ sudo ./mythic-cli install github https://github.com/pop-ecx/rango.git
 
 ## Announcements
 Rango now supports Windows targets. Most of the linux features are ported over to
-windows as well. It is still in its early stages and at this point does not
+windows as well. You can use the same format for commands in linux for windows
+e.g `ls` works the same in windows as it does in linux.
+It is still in its early stages and at this point does not
 support packing out of the box. You can use external packers to pack the windows
 binaries.
 
