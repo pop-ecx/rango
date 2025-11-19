@@ -36,8 +36,8 @@ sudo ./mythic-cli install github https://github.com/pop-ecx/rango.git
 
 ## Announcements
 Rango now supports Windows targets. Most of the linux features are ported over to
-windows as well. It is still in its rearly stages and at this point does not
-support packing out of the box. You can use external packers to back the windows
+windows as well. It is still in its early stages and at this point does not
+support packing out of the box. You can use external packers to pack the windows
 binaries.
 
 > :warning: Rango is still not mature yet. Expect some bugs.
