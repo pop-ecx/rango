@@ -1,0 +1,23 @@
+name: Zig Format Check
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  zig-fmt:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.1
+
+      - name: Run zig fmt
+        run: |
+          zig fmt --check Payload_Type/rango/rango/agent_code/src
+          zig fmt --check Payload_Type/rango/rango/agent_code/tests
