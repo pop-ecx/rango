@@ -175,7 +175,7 @@ pub const agentConfig: types.AgentConfig = .{{
         pack_with_zyra = self.get_parameter("pack_with_zyra")
         packing_key = self.get_parameter("Packing_key")
         if pack_with_zyra and target_os=="linux" and packing_key:
-            packed_filename = f"{filename}p"
+            packed_filename = f"{filename}"
             pack_cmd = f"zyra -o {packed_filename} -k {packing_key} {filename}"
             proc = await asyncio.create_subprocess_shell(
                 pack_cmd,
