@@ -10,7 +10,7 @@ pub const NetworkClient = struct {
     allocator: Allocator,
     config: AgentConfig,
     client: http.Client,
-    
+
     pub fn init(allocator: Allocator, config: AgentConfig) NetworkClient {
         return NetworkClient{
             .allocator = allocator,
@@ -18,15 +18,15 @@ pub const NetworkClient = struct {
             .client = http.Client{ .allocator = allocator },
         };
     }
-    
+
     pub fn deinit(self: *NetworkClient) void {
         self.client.deinit();
     }
-    
+
     pub fn sendRequest(self: *NetworkClient, endpoint: []const u8, data: []const u8) ![]const u8 {
         const uri_str = try std.fmt.allocPrint(self.allocator, "{s}:{d}/{s}", .{ self.config.callback_host, self.config.callback_port, endpoint });
         defer self.allocator.free(uri_str);
-        
+
         const extra_headers = &[_]http.Header{
             .{ .name = "user-agent", .value = self.config.user_agent },
             .{ .name = "content-type", .value = "application/json" },

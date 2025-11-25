@@ -53,4 +53,3 @@ pub const AgentConfig = struct {
     encrypted_exchange_check: bool = true,
     domain_front: ?[]const u8 = null,
 };
-
