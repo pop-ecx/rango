@@ -261,7 +261,7 @@ pub const CommandExecutor = struct {
         defer parsed.deinit();
         const path = parsed.value.path;
         if (path.len == 0) {
-            return MythicResponse {
+            return MythicResponse{
                 .task_id = task.id,
                 .user_output = "No path provided",
                 .completed = true,
@@ -269,14 +269,14 @@ pub const CommandExecutor = struct {
             };
         }
         std.fs.deleteFileAbsolute(path) catch |err| {
-            return MythicResponse {
+            return MythicResponse{
                 .task_id = task.id,
                 .user_output = try std.fmt.allocPrint(self.allocator, "Failed to delete file: {}", .{err}),
                 .completed = true,
                 .status = "error",
             };
         };
-        return MythicResponse {
+        return MythicResponse{
             .task_id = task.id,
             .user_output = try std.fmt.allocPrint(self.allocator, "Deleted file: {s}", .{path}),
             .completed = true,
@@ -292,7 +292,7 @@ pub const CommandExecutor = struct {
         defer parsed.deinit();
         const path = parsed.value.path;
         if (path.len == 0) {
-            return MythicResponse {
+            return MythicResponse{
                 .task_id = task.id,
                 .user_output = "No path provided",
                 .completed = true,
@@ -300,14 +300,14 @@ pub const CommandExecutor = struct {
             };
         }
         std.fs.deleteTreeAbsolute(path) catch |err| {
-            return MythicResponse {
+            return MythicResponse{
                 .task_id = task.id,
                 .user_output = try std.fmt.allocPrint(self.allocator, "Failed to delete directory: {}", .{err}),
                 .completed = true,
                 .status = "error",
             };
         };
-        return MythicResponse {
+        return MythicResponse{
             .task_id = task.id,
             .user_output = try std.fmt.allocPrint(self.allocator, "Deleted directory: {s}", .{path}),
             .completed = true,
