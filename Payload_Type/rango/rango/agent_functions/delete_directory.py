@@ -18,7 +18,7 @@ class DeleteDirectoryArguments(TaskArguments):
         self.load_args_from_dictionary(dictionary_arguments)
 
 class DeleteDirectoryCommand(CommandBase):
-    cmd = "delete_directory"
+    cmd = "deletedirectory"
     needs_admin = False
     help_cmd = "delete_directory /path/to/directory"
     description = """This deletes the specified directory"""
