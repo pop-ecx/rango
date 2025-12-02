@@ -6,7 +6,7 @@ class DeleteDirectoryArguments(TaskArguments):
     def __init__(self, command_line, **kwargs):
         super().__init__(command_line, **kwargs)
         self.args = [
-            PathParameter(name="dirpath", display_name="Delete directory", type=ParameterType.String,
+            CommandParameter(name="path", display_name="Delete directory", type=ParameterType.String,
                              description="Path of the directory to delete"),
         ]
     async def parse_arguments(self):
@@ -52,13 +52,13 @@ class DeleteDirectoryCommand(CommandBase):
         response = MythicCommandBase.PTTaskCreateTaskingMessageResponse(
             TaskID=taskData.Task.ID,
             Success=True,
-            Parameters=taskData.args.get_arg("dirpath"),
+            Parameters=taskData.args.get_arg("path"),
         )
         await SendMythicRPCArtifactCreate(MythicRPCArtifactCreateMessage(
-            TaskID=taskData.Task.ID, ArtifactMessage="{}".format(taskData.args.get_arg("dirpath")),
+            TaskID=taskData.Task.ID, ArtifactMessage="{}".format(taskData.args.get_arg("path")),
             BaseArtifactType="Process Create"
         ))
-        response.DisplayParams = taskData.args.get_arg("dirpath")
+        response.DisplayParams = taskData.args.get_arg("path")
         return response
     async def process_response(self, task: PTTaskMessageAllData, response: any) -> PTTaskProcessResponseMessageResponse:
         resp = PTTaskProcessResponseMessageResponse(TaskID=task.Task.ID, Success=True)

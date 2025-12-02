@@ -6,7 +6,7 @@ class DeleteFileArguments(TaskArguments):
     def __init__(self, command_line, **kwargs):
         super().__init__(command_line, **kwargs)
         self.args = [
-            PathParameter(name="path", display_name="Delete file", type=ParameterType.String,
+            CommandParameter(name="path", display_name="Delete file", type=ParameterType.String,
                              description="Path of the file to delete"),
         ]
 
