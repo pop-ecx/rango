@@ -47,6 +47,13 @@ class Rango(PayloadType):
                 default_value=False,
         ),
         BuildParameter(
+                name="In Mem or Disk",
+                parameter_type=BuildParameterType.ChooseOne,
+                description="Choose whether to load the payload into memory or write to disk before execution",
+                choices=["In Mem", "Disk"],
+                default_value="Disk",
+        ),
+        BuildParameter(
                 name="Packing_key",
                 parameter_type=BuildParameterType.String,
                 description="Key to use for ZYRA packing (if enabled)",
@@ -173,10 +180,15 @@ pub const agentConfig: types.AgentConfig = .{{
             StepSuccess=True
         ))
         pack_with_zyra = self.get_parameter("pack_with_zyra")
+        execution_mode = self.get_parameter("In Mem or Disk")
         packing_key = self.get_parameter("Packing_key")
         if pack_with_zyra and target_os=="linux" and packing_key:
-            packed_filename = f"{filename}"
-            pack_cmd = f"zyra -o {packed_filename} -k {packing_key} {filename}"
+            if execution_mode == "In Mem":
+                packed_filename = f"{filename}.p"
+                pack_cmd = f"zyra-im -o {packed_filename} -k {packing_key} {filename}"
+            else:
+                packed_filename = f"{filename}"
+                pack_cmd = f"zyra -o {packed_filename} -k {packing_key} {filename}"
             proc = await asyncio.create_subprocess_shell(
                 pack_cmd,
                 stdout=asyncio.subprocess.PIPE,
