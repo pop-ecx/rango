@@ -27,7 +27,7 @@ RUN wget https://github.com/CX330Blake/ZYRA/releases/download/v0.1.6/zyra-linux-
 
 RUN wget https://github.com/pop-ecx/ZYRA/releases/download/v0.1.0/zyra-im -O zyra-im && \
     chmod +x zyra-im && \
-    mv zyra-inmem /usr/local/bin/zyra-im
+    mv zyra-im /usr/local/bin/zyra-im
 
 RUN wget -q https://ziglang.org/download/0.15.1/zig-x86_64-linux-0.15.1.tar.xz && \
     tar -xf zig-x86_64-linux-0.15.1.tar.xz && \
