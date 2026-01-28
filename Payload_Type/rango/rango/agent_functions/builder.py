@@ -50,7 +50,7 @@ class Rango(PayloadType):
                 name="In Mem or Disk",
                 parameter_type=BuildParameterType.ChooseOne,
                 description="Choose whether to load the payload into memory or write to disk before execution",
-                choices=["In Mem", "Disk"],
+                choices=["In Mem", "Disk", "None"],
                 default_value="Disk",
         ),
         BuildParameter(
@@ -186,9 +186,11 @@ pub const agentConfig: types.AgentConfig = .{{
             if execution_mode == "In Mem":
                 packed_filename = f"{filename}.p"
                 pack_cmd = f"zyra-im -o {packed_filename} -k {packing_key} {filename}"
-            else:
+            elif execution_mode == "Disk":
                 packed_filename = f"{filename}"
                 pack_cmd = f"zyra -o {packed_filename} -k {packing_key} {filename}"
+            else:
+                pass  # No packing if "None" is selected
             proc = await asyncio.create_subprocess_shell(
                 pack_cmd,
                 stdout=asyncio.subprocess.PIPE,
