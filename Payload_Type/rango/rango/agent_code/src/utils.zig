@@ -366,4 +366,46 @@ pub const PersistUtils = struct {
         }
         //_ = write_proc.wait() catch {};//line caused a panic in my tests, commenting out for now
     }
+    pub fn get_cron_entries(allocator: std.mem.Allocator) !?[]const u8 {
+        if (builtin.os.tag == .windows) {
+            const result = try std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &.{
+                    "reg.exe",
+                    "query",
+                    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    "/v",
+                    "Rango",
+                },
+            });
+
+            if (result.term.Exited != 0) {
+                return try allocator.dupe(u8, "");
+            }
+            return try allocator.dupe(u8, result.stdout);
+        } else {
+            const result = try std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &.{ "crontab", "-l" },
+                .max_output_bytes = 8192,
+            });
+            const out = result.stdout;
+            var filtered_lines = std.mem.tokenizeAny(u8, out, "\n");
+            while (filtered_lines.next()) |line| {
+                if (std.mem.startsWith(u8, std.mem.trim(u8, line, " \t"), "@reboot")) {
+                    var parts = std.mem.tokenizeScalar(u8, line, ' ');
+                    _ = parts.next(); // skip "@reboot"
+
+                    if (parts.next()) |path| {
+                        return path;
+                    }
+                }
+            }
+            return null; // No entry found
+        }
+    }
+    pub fn update_cron_entry(old_path: []const u8, new_path: []const u8, allocator: std.mem.Allocator) !void {
+        try PersistUtils.remove_cron_entry(old_path, allocator);
+        try PersistUtils.install_cron(new_path, allocator);
+    }
 };
