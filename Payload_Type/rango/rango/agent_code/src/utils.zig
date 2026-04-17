@@ -184,7 +184,7 @@ pub const TimeUtils = struct {
         const parsed_date = parseDate(kill_date) catch {
             return false;
         };
-        const current_timestamp = Io.Timestamp.now(io, .real).toNanoseconds();
+        const current_timestamp = @divTrunc(Io.Timestamp.now(io, .real).toNanoseconds(), std.time.ns_per_s);
         return current_timestamp >= parsed_date;
     }
 
