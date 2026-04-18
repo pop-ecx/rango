@@ -193,7 +193,7 @@ pub const CommandExecutor = struct {
                 .chunk_num = 1,
                 .chunk_data = encoded_content,
                 .total_chunks = 1,
-                .full_path = null,
+                .full_path = task.parameters,
                 .chunk_size = encoded_content.len,
                 .is_screenshot = false,
             },

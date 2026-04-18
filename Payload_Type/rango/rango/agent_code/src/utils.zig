@@ -23,6 +23,7 @@ pub const SystemInfo = struct {
     pub fn getCurrentUser(self: *SystemInfo) ![]const u8 {
         const key = if (builtin.os.tag == .windows) "USERNAME" else "USER";
         // getEnvVarOwned is deprecated, so we have to use Environ.Map. Feels a lot more cumbersome but it is what it is.
+        // TODO: Ivestigate a bug where if packing with ZYRA, username is always "Unknown"
         if (self.environ_map.get(key)) |value| {
             return self.allocator.dupe(u8, value);
         } else {
