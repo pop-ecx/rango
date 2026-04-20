@@ -1,6 +1,8 @@
 from mythic_container.MythicCommandBase import *
 import json
 from mythic_container.MythicRPC import *
+import base64
+import os
 
 
 class DownloadArguments(TaskArguments):
@@ -53,4 +55,28 @@ class DownloadCommand(CommandBase):
 
     async def process_response(self, task: PTTaskMessageAllData, response: any) -> PTTaskProcessResponseMessageResponse:
         resp = PTTaskProcessResponseMessageResponse(TaskID=task.Task.ID, Success=True)
+
+        if not isinstance(response, dict) or "download" not in response:
+            return resp
+
+        download = response["download"]
+        chunk_data = base64.b64decode(download["chunk_data"])
+        full_path = download.get("full_path") or task.args.command_line
+        filename = os.path.basename(full_path)
+
+        file_resp = await SendMythicRPCFileCreate(MythicRPCFileCreateMessage(
+            TaskID=task.Task.ID,
+            FileContents=chunk_data,
+            DeleteAfterFetch=False,
+            Filename=filename,
+            IsPayload=False,
+            IsDownloadFromAgent=True,
+            IsScreenshot=False,
+            FullRemotePath=full_path,
+        ))
+
+        if not file_resp.Success:
+            resp.Success = False
+            resp.Error = file_resp.Error
+
         return resp

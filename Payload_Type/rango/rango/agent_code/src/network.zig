@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const http = std.http;
 const json = std.json;
+const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
 const AgentConfig = types.AgentConfig;
@@ -11,11 +12,11 @@ pub const NetworkClient = struct {
     config: AgentConfig,
     client: http.Client,
 
-    pub fn init(allocator: Allocator, config: AgentConfig) NetworkClient {
+    pub fn init(allocator: Allocator, config: AgentConfig, io: Io) NetworkClient {
         return NetworkClient{
             .allocator = allocator,
             .config = config,
-            .client = http.Client{ .allocator = allocator },
+            .client = http.Client{ .allocator = allocator, .io = io },
         };
     }
 

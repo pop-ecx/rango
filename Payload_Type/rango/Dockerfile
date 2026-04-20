@@ -29,11 +29,11 @@ RUN wget https://github.com/pop-ecx/ZYRA/releases/download/v0.1.0/zyra-im -O zyr
     chmod +x zyra-im && \
     mv zyra-im /usr/local/bin/zyra-im
 
-RUN wget -q https://ziglang.org/download/0.15.1/zig-x86_64-linux-0.15.1.tar.xz && \
-    tar -xf zig-x86_64-linux-0.15.1.tar.xz && \
-    mv zig-x86_64-linux-0.15.1 /usr/local/zig-0.15.1 && \
-    ln -s /usr/local/zig-0.15.1/zig /usr/local/bin/zig && \
-    rm zig-x86_64-linux-0.15.1.tar.xz
+RUN wget -q https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz && \
+    tar -xf zig-x86_64-linux-0.16.0.tar.xz && \
+    mv zig-x86_64-linux-0.16.0 /usr/local/zig-0.16.0 && \
+    ln -s /usr/local/zig-0.16.0/zig /usr/local/bin/zig && \
+    rm zig-x86_64-linux-0.16.0.tar.xz
 
 COPY requirements.txt /
 RUN pip3 install -r /requirements.txt
