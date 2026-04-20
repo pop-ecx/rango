@@ -307,7 +307,12 @@ pub const PersistUtils = struct {
             const combined = try std.mem.concat(allocator, u8, &[_][]const u8{ existing.stdout, cron_line });
             defer allocator.free(combined);
 
-            const write_proc = try std.process.spawn(io, .{.argv = &[_][]const u8{ "crontab", "-" }, .stdin = .pipe, .stdout = .inherit, .stderr = .inherit,});
+            const write_proc = try std.process.spawn(io, .{
+                .argv = &[_][]const u8{ "crontab", "-" },
+                .stdin = .pipe,
+                .stdout = .inherit,
+                .stderr = .inherit,
+            });
 
             if (write_proc.stdin) |stdin| {
                 try stdin.writeStreamingAll(io, combined);
@@ -329,7 +334,7 @@ pub const PersistUtils = struct {
                 return error.RegistryDeleteFailed;
             }
         } else {
-            const existing = std.process.run( allocator, io, .{
+            const existing = std.process.run(allocator, io, .{
                 .argv = &.{ "crontab", "-l" },
                 .stdout_limit = .limited(8192),
                 .stderr_limit = .limited(8192),
@@ -350,7 +355,12 @@ pub const PersistUtils = struct {
             const filtered = try std.mem.join(allocator, "\n", list.items);
             defer allocator.free(filtered);
 
-            const write_proc = try std.process.spawn(io, .{.argv = &[_][]const u8{ "crontab", "-" }, .stdin = .pipe, .stdout = .inherit, .stderr = .inherit,});
+            const write_proc = try std.process.spawn(io, .{
+                .argv = &[_][]const u8{ "crontab", "-" },
+                .stdin = .pipe,
+                .stdout = .inherit,
+                .stderr = .inherit,
+            });
 
             if (write_proc.stdin) |stdin| {
                 try stdin.writeStreamingAll(io, filtered);
