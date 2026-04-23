@@ -37,7 +37,6 @@ class PortscanArguments(TaskArguments):
         if self.command_line and self.command_line.startswith("{"):
             self.load_args_from_json_string(self.command_line)
         else:
-            # parse "-hosts X -ports Y -timeout Z" manually
             import shlex
             tokens = shlex.split(self.command_line)
             i = 0
