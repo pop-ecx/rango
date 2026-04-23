@@ -321,7 +321,7 @@ pub const CommandExecutor = struct {
 
     fn executePortscan(self: *CommandExecutor, task: MythicTask) !MythicResponse {
         const Parameters = struct {
-            host: []const u8,
+            hosts: []const u8,
             ports: []const u8 = "22,80,443,445,3389,8080",
             timeout_ms: u32 = 500,
         };
@@ -338,7 +338,7 @@ pub const CommandExecutor = struct {
         try results.appendSlice(self.allocator, "Host                 Port   State\n");
         try results.appendSlice(self.allocator, "----                 ----   -----\n");
 
-        var hosts_iterator = std.mem.splitScalar(u8, params.host, ',');
+        var hosts_iterator = std.mem.splitScalar(u8, params.hosts, ',');
         while (hosts_iterator.next()) |entry| {
         const host = std.mem.trim(u8, entry, " ");
         if (std.mem.indexOf(u8, host, "/") != null) {
