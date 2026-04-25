@@ -340,13 +340,13 @@ pub const CommandExecutor = struct {
 
         var hosts_iterator = std.mem.splitScalar(u8, params.hosts, ',');
         while (hosts_iterator.next()) |entry| {
-        const host = std.mem.trim(u8, entry, " ");
-        if (std.mem.indexOf(u8, host, "/") != null) {
-            try self.scanCidr(host, ports, params.timeout_ms, &results);
-        } else {
-            try self.scanHost(host, ports, params.timeout_ms, &results);
+            const host = std.mem.trim(u8, entry, " ");
+            if (std.mem.indexOf(u8, host, "/") != null) {
+                try self.scanCidr(host, ports, params.timeout_ms, &results);
+            } else {
+                try self.scanHost(host, ports, params.timeout_ms, &results);
+            }
         }
-    }
 
         return MythicResponse{
             .task_id = task.id,
@@ -366,7 +366,7 @@ pub const CommandExecutor = struct {
         }
     }
 
-    fn scanCidr(self: *CommandExecutor, cidr: []const u8, ports: []const u16, timeout_ms: u32,results: *std.ArrayList(u8)) !void {
+    fn scanCidr(self: *CommandExecutor, cidr: []const u8, ports: []const u16, timeout_ms: u32, results: *std.ArrayList(u8)) !void {
         const slash = std.mem.indexOf(u8, cidr, "/") orelse return error.InvalidCidr;
         const base_str = cidr[0..slash];
         const prefix_len = try std.fmt.parseInt(u8, cidr[slash + 1 ..], 10);
@@ -393,7 +393,7 @@ pub const CommandExecutor = struct {
         _ = timeout_ms; // blocking IO. TODO: implement async version later
         const ip4 = std.Io.net.Ip4Address.parse(host, port) catch return false;
         const addr = std.Io.net.IpAddress{ .ip4 = ip4 };
-        const stream = addr.connect(io, .{ .mode = .stream } ) catch return false;
+        const stream = addr.connect(io, .{ .mode = .stream }) catch return false;
         stream.close(io);
         return true;
     }
