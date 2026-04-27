@@ -357,13 +357,28 @@ pub const CommandExecutor = struct {
     }
 
     fn scanHost(self: *CommandExecutor, host: []const u8, ports: []const u16, timeout_ms: u32, results: *std.ArrayList(u8)) !void {
-        for (ports) |port| {
-            if (tcpProbe(self.io, host, port, timeout_ms)) {
+        _ = timeout_ms;
+        var group = std.Io.Group.init;
+        errdefer group.cancel(self.io);
+
+        const slots = try Allocator.alloc(self.allocator, ?u16, ports.len);
+        defer Allocator.free(self.allocator, slots);
+        @memset(slots, null);
+
+        // TcpProbe returns bool, we want concurrentError!void
+        for (ports, 0..) |port, i| {
+            try group.concurrent(self.io, tcpProbeTask, .{ self.io, host, port, &slots[i] });
+        }
+        try group.await(self.io);
+
+        for (slots) |slot| {
+            if (slot) |port| {
                 const line = try std.fmt.allocPrint(self.allocator, "{s:<21}{d:<7}open\n", .{ host, port });
                 defer self.allocator.free(line);
                 try results.appendSlice(self.allocator, line);
             }
         }
+
     }
 
     fn scanCidr(self: *CommandExecutor, cidr: []const u8, ports: []const u16, timeout_ms: u32, results: *std.ArrayList(u8)) !void {
@@ -396,6 +411,14 @@ pub const CommandExecutor = struct {
         const stream = addr.connect(io, .{ .mode = .stream }) catch return false;
         stream.close(io);
         return true;
+    }
+
+    fn tcpProbeTask(io: Io, host: []const u8, port: u16, result: *?u16) !void {
+        if (tcpProbe(io, host, port, 500)) {
+            result.* = port;
+        } else {
+            result.* = null;
+        }
     }
 
     fn parsePorts(allocator: Allocator, ports_str: []const u8) ![]u16 {
