@@ -405,10 +405,11 @@ pub const CommandExecutor = struct {
     }
 
     fn tcpProbe(io: Io, host: []const u8, port: u16, timeout_ms: u32) bool {
-        _ = timeout_ms; // blocking IO. TODO: implement async version later
+        const timeout = timeout_ms; // blocking IO. TODO: implement async version later
+        const duration = Io.Clock.Duration{ .raw = Io.Duration.fromMilliseconds(timeout), .clock = .real };
         const ip4 = std.Io.net.Ip4Address.parse(host, port) catch return false;
         const addr = std.Io.net.IpAddress{ .ip4 = ip4 };
-        const stream = addr.connect(io, .{ .mode = .stream }) catch return false;
+        const stream = addr.connect(io, .{ .mode = .stream, .timeout = Io.Timeout{ .duration = duration }}) catch return false;
         stream.close(io);
         return true;
     }
