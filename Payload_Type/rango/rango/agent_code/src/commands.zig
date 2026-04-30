@@ -404,18 +404,22 @@ pub const CommandExecutor = struct {
         }
     }
 
-    fn tcpProbe(io: Io, host: []const u8, port: u16, timeout_ms: u32) bool {
-        const timeout = timeout_ms; // blocking IO. TODO: implement async version later
-        const duration = Io.Clock.Duration{ .raw = Io.Duration.fromMilliseconds(timeout), .clock = .real };
+    fn tcpProbe(io: Io, host: []const u8, port: u16) bool {
+        //const timeout = timeout_ms; // blocking IO. TODO: implement async version later
+        //const duration = Io.Clock.Duration{ .raw = Io.Duration.fromMilliseconds(timeout), .clock = .real };
         const ip4 = std.Io.net.Ip4Address.parse(host, port) catch return false;
         const addr = std.Io.net.IpAddress{ .ip4 = ip4 };
-        const stream = addr.connect(io, .{ .mode = .stream, .timeout = Io.Timeout{ .duration = duration }}) catch return false;
+        // Cannot do proper timeout because timeout is not yet implemented in connect
+        // We'll just set it to none at the moment and rely on the OS timeout
+        // Tracking https://github.com/ziglang/zig/issues/25747
+        // Threaded.zig, fn netConnectIpPosix, 12208 2407ee954b780e5a6a73f88b0865feff365c5ce5
+        const stream = addr.connect(io, .{ .mode = .stream, .timeout = .none }) catch return false;
         stream.close(io);
         return true;
     }
 
     fn tcpProbeTask(io: Io, host: []const u8, port: u16, result: *?u16) !void {
-        if (tcpProbe(io, host, port, 500)) {
+        if (tcpProbe(io, host, port)) {
             result.* = port;
         } else {
             result.* = null;
