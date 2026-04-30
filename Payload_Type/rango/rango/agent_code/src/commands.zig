@@ -322,7 +322,7 @@ pub const CommandExecutor = struct {
     fn executePortscan(self: *CommandExecutor, task: MythicTask) !MythicResponse {
         const Parameters = struct {
             hosts: []const u8,
-            ports: []const u8 = "22,80,443,445,3389,8080",
+            ports: []const u8,
             timeout_ms: u32 = 500,
         };
         const parsed = try json.parseFromSlice(Parameters, self.allocator, task.parameters, .{});
@@ -382,7 +382,7 @@ pub const CommandExecutor = struct {
     }
 
     fn scanCidr(self: *CommandExecutor, cidr: []const u8, ports: []const u16, timeout_ms: u32, results: *std.ArrayList(u8)) !void {
-        const slash = std.mem.indexOf(u8, cidr, "/") orelse return error.InvalidCidr;
+        const slash = std.mem.find(u8, cidr, "/") orelse return error.InvalidCidr;
         const base_str = cidr[0..slash];
         const prefix_len = try std.fmt.parseInt(u8, cidr[slash + 1 ..], 10);
 
