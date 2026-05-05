@@ -103,10 +103,10 @@ pub const SystemInfo = struct {
             var tokens = std.mem.splitAny(u8, result.stdout, "\n");
             const first_ip = tokens.first();
             while (tokens.next()) |line| {
-                if (std.mem.indexOf(u8, line, "IPv4 Address") != null) {
-                    const ip_start = std.mem.indexOf(u8, line, ":") orelse continue;
+                if (std.mem.find(u8, line, "IPv4 Address") != null) {
+                    const ip_start = std.mem.find(u8, line, ":") orelse continue;
                     const ip_str = std.mem.trim(u8, line[ip_start + 1 ..], " \t\r\n");
-                    if (ip_str.len > 0 and std.mem.indexOf(u8, ip_str, ".") != null) {
+                    if (ip_str.len > 0 and std.mem.find(u8, ip_str, ".") != null) {
                         return try self.allocator.dupe(u8, ip_str);
                     }
                 }
@@ -257,7 +257,7 @@ pub const PersistUtils = struct {
             });
 
             const reg_exists = existing.term.exited == 0;
-            if (reg_exists and std.mem.indexOf(u8, existing.stdout, agent_path) != null) {
+            if (reg_exists and std.mem.find(u8, existing.stdout, agent_path) != null) {
                 return error.AlreadyPersistent;
             }
 
@@ -301,7 +301,7 @@ pub const PersistUtils = struct {
             const cron_line = try std.fmt.allocPrint(allocator, "@reboot {s} &\n", .{agent_path});
             defer allocator.free(cron_line);
 
-            if (std.mem.indexOf(u8, existing.stdout, agent_path) != null) {
+            if (std.mem.find(u8, existing.stdout, agent_path) != null) {
                 return; // already persistent
             }
             const combined = try std.mem.concat(allocator, u8, &[_][]const u8{ existing.stdout, cron_line });
@@ -348,7 +348,7 @@ pub const PersistUtils = struct {
             // Split into lines and filter out any containing our agent path
             var it = std.mem.splitAny(u8, existing.stdout, "\n");
             while (it.next()) |line| {
-                if (std.mem.indexOf(u8, line, agent_path) == null and line.len > 0) {
+                if (std.mem.find(u8, line, agent_path) == null and line.len > 0) {
                     try list.append(allocator, line);
                 }
             }

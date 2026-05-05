@@ -341,7 +341,7 @@ pub const CommandExecutor = struct {
         var hosts_iterator = std.mem.splitScalar(u8, params.hosts, ',');
         while (hosts_iterator.next()) |entry| {
             const host = std.mem.trim(u8, entry, " ");
-            if (std.mem.indexOf(u8, host, "/") != null) {
+            if (std.mem.find(u8, host, "/") != null) {
                 try self.scanCidr(host, ports, params.timeout_ms, &results);
             } else {
                 try self.scanHost(host, ports, params.timeout_ms, &results);
@@ -431,7 +431,7 @@ pub const CommandExecutor = struct {
         var it = std.mem.splitScalar(u8, ports_str, ',');
         while (it.next()) |token| {
             const t = std.mem.trim(u8, token, " ");
-            if (std.mem.indexOf(u8, t, "-")) |dash| {
+            if (std.mem.find(u8, t, "-")) |dash| {
                 const lo = try std.fmt.parseInt(u16, t[0..dash], 10);
                 const hi = try std.fmt.parseInt(u16, t[dash + 1 ..], 10);
                 var p = lo;
