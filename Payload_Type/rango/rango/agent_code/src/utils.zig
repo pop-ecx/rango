@@ -244,7 +244,7 @@ pub const TimeUtils = struct {
 };
 
 pub const PersistUtils = struct {
-    pub fn install_cron(agent_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
+    pub fn installCron(agent_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
         if (builtin.os.tag == .windows) {
             const existing = try std.process.run(allocator, io, .{
                 .argv = &.{
@@ -325,7 +325,7 @@ pub const PersistUtils = struct {
             //};
         }
     }
-    pub fn remove_cron_entry(agent_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
+    pub fn removeCronEntry(agent_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
         if (builtin.os.tag == .windows) {
             const existing = try std.process.run(allocator, io, .{
                 .argv = &.{ "reg.exe", "delete", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "/v", "Rango", "/f" },
@@ -370,7 +370,7 @@ pub const PersistUtils = struct {
         }
         //_ = write_proc.wait() catch {};//line caused a panic in my tests, commenting out for now
     }
-    pub fn get_cron_entries(allocator: std.mem.Allocator, io: Io) !?[]const u8 {
+    pub fn getCronEntries(allocator: std.mem.Allocator, io: Io) !?[]const u8 {
         if (builtin.os.tag == .windows) {
             const result = try std.process.run(allocator, io, .{
                 .argv = &.{
@@ -400,15 +400,15 @@ pub const PersistUtils = struct {
                     _ = parts.next(); // skip "@reboot"
 
                     if (parts.next()) |path| {
-                        return path;
+                        return try allocator.dupe(u8, path);
                     }
                 }
             }
             return null; // No entry found
         }
     }
-    pub fn update_cron_entry(old_path: []const u8, new_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
-        try PersistUtils.remove_cron_entry(old_path, allocator, io);
-        try PersistUtils.install_cron(new_path, allocator, io);
+    pub fn updateCronEntry(old_path: []const u8, new_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
+        try PersistUtils.removeCronEntry(old_path, allocator, io);
+        try PersistUtils.installCron(new_path, allocator, io);
     }
 };

