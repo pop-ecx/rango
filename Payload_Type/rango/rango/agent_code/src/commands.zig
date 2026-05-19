@@ -393,7 +393,6 @@ pub const CommandExecutor = struct {
                 try results.appendSlice(self.allocator, line);
             }
         }
-
     }
 
     fn scanCidr(self: *CommandExecutor, cidr: []const u8, ports: []const u16, timeout_ms: u32, results: *std.ArrayList(u8)) !void {
