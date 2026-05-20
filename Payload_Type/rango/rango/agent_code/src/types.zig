@@ -21,6 +21,13 @@ pub const MythicTask = struct {
     parameters: []const u8,
     timestamp: []const u8,
     status: TaskStatus = .submitted,
+
+    pub fn deinit(self: *MythicTask, allocator: std.mem.Allocator) void {
+        allocator.free(self.id);
+        allocator.free(self.command);
+        allocator.free(self.parameters);
+        allocator.free(self.timestamp);
+    }
 };
 
 pub const MythicResponse = struct {
@@ -30,6 +37,17 @@ pub const MythicResponse = struct {
     status: []const u8,
     artifacts: []const u8 = "",
     download: ?DownloadInfo = null,
+
+    pub fn deinit(self: *MythicResponse, allocator: std.mem.Allocator) void {
+        if (self.user_output) |user_output| {
+            allocator.free(user_output);
+        }
+        if (self.download) |download| {
+            if (download.chunk_data) |chunk_data| {
+                allocator.free(chunk_data);
+            }
+        }
+    }
 };
 
 pub const DownloadInfo = struct {

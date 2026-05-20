@@ -21,6 +21,7 @@ It is designed as a proof of concept for testing zig as a language for writing C
 ## Capabilities
 - Execute ls on the target
 - Execute basic commands
+- Execute portscan (Experimental)
 
 ## Installation
 To install go to your mythic directory and run:
@@ -33,6 +34,7 @@ sudo ./mythic-cli install github https://github.com/pop-ecx/rango.git
 ## Coming Features
 - ~[ ]File upload and download~
 - ~[ ] encryption~
+- [ ] BOF support
 
 ## Announcements
 Rango now supports Windows targets. Most of the linux features are ported over to

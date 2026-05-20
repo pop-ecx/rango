@@ -1,4 +1,3 @@
-import logging
 import pathlib
 from mythic_container.PayloadBuilder import *
 from mythic_container.MythicCommandBase import *
@@ -8,9 +7,7 @@ import tempfile
 from distutils.dir_util import copy_tree
 import asyncio
 import os
-import sys
 import stat
-import pathlib
 
 class Rango(PayloadType):
     name = "rango"
@@ -24,6 +21,7 @@ class Rango(PayloadType):
     c2_profiles = ["http"]
     mythic_encrypts = False
     translation_container = "RangoTranslator" # "myPythonTranslation"
+
     build_parameters = [
         BuildParameter(
             name="os",
@@ -41,25 +39,34 @@ class Rango(PayloadType):
             default_value="exe",
         ),
         BuildParameter(
-                name="pack_with_zyra",
-                parameter_type=BuildParameterType.Boolean,
-                description="Pack the final payload with ZYRA (Linux only)",
-                default_value=False,
+            name="pack_with_zyra",
+            parameter_type=BuildParameterType.Boolean,
+            description="Pack the final payload with ZYRA (Linux only)",
+            default_value=False,
         ),
         BuildParameter(
-                name="In Mem or Disk",
-                parameter_type=BuildParameterType.ChooseOne,
-                description="Choose whether to load the payload into memory or write to disk before execution",
-                choices=["In Mem", "Disk", "None"],
-                default_value="Disk",
+            name="In Mem or Disk",
+            parameter_type=BuildParameterType.ChooseOne,
+            description="Choose whether to load the payload into memory or write to disk before execution",
+            choices=["In Mem", "Disk", "None"],
+            default_value="Disk",
         ),
         BuildParameter(
-                name="Packing_key",
-                parameter_type=BuildParameterType.String,
-                description="Key to use for ZYRA packing (if enabled)",
-                default_value="ff",
+            name="Packing_key",
+            parameter_type=BuildParameterType.String,
+            description="Key to use for ZYRA packing (if enabled)",
+            default_value="ff",
+        ),
+        BuildParameter(
+            name="release_type",
+            parameter_type=BuildParameterType.ChooseOne,
+            description="Specify the release type for the Zig build",
+            choices=["small", "safe", "fast", "debug"],
+            default_value="small",
+            required=True,
         ),
     ]
+
     agent_path = pathlib.Path(".") / "rango"
     agent_icon_path = agent_path / "agent_functions" / "rango.png"
     agent_code_path = agent_path / "agent_code"
@@ -73,6 +80,7 @@ class Rango(PayloadType):
     async def build(self) -> BuildResponse:
         # this function gets called to create an instance of your payload
         resp = BuildResponse(status=BuildStatus.Success)
+
         # create the payload
         config = {
             "payload_uuid": self.uuid,
@@ -91,11 +99,13 @@ class Rango(PayloadType):
             "callback_jitter": 0.1,
             "killdate": "",
         }
+
         for c2 in self.c2info:
             profile = c2.get_c2profile()
             for key, val in c2.get_parameters_dict().items():
                 config[key] = val
             break
+
         if "https://" in config["callback_host"]:
             config["ssl"] = True
             config["encrypted_exchange_check"] = True
@@ -130,9 +140,11 @@ class Rango(PayloadType):
             StepStdout="Found all files for payload",
             StepSuccess=True
         ))
+
         agent_build_path = tempfile.TemporaryDirectory(suffix=self.uuid)
         copy_tree(str(self.agent_code_path), agent_build_path.name)
-        # A hacky way to replace placeholder values generated at runtime. There's probably a more ziggy way to do this.
+
+        # A hacky way to replace placeholder values generated at runtime.
         config_zig_content = f"""
 const types = @import("types.zig");
 
@@ -151,13 +163,21 @@ pub const agentConfig: types.AgentConfig = .{{
         config_file_path = cwd / "rango" / "agent_code" / "src" / "config.zig"
         with open(config_file_path, "w") as f:
             f.write(config_zig_content)
+
         await SendMythicRPCPayloadUpdatebuildStep(MythicRPCPayloadUpdateBuildStepMessage(
             PayloadUUID=self.uuid,
             StepName="Generating configuration",
             StepStdout="Generated config.zig with agent settings",
             StepSuccess=True
         ))
-        command = f"zig build -Dtarget={zig_target} --release=small"
+
+        release_type = self.get_parameter("release_type")
+
+        if release_type == "debug":
+            command = f"zig build -Dtarget={zig_target}"
+        else:
+            command = f"zig build -Dtarget={zig_target} --release={release_type}"
+
         filename = str(self.agent_code_path / "zig-out" / "bin" / binary_name)
         proc = await asyncio.create_subprocess_shell(
             command,
@@ -179,9 +199,11 @@ pub const agentConfig: types.AgentConfig = .{{
             StepStdout="Successfully compiled rango",
             StepSuccess=True
         ))
+
         pack_with_zyra = self.get_parameter("pack_with_zyra")
         execution_mode = self.get_parameter("In Mem or Disk")
         packing_key = self.get_parameter("Packing_key")
+
         if pack_with_zyra and target_os=="linux" and packing_key:
             if execution_mode == "In Mem":
                 packed_filename = f"{filename}.p"
@@ -191,6 +213,7 @@ pub const agentConfig: types.AgentConfig = .{{
                 pack_cmd = f"zyra -o {packed_filename} -k {packing_key} {filename}"
             else:
                 pass  # No packing if "None" is selected
+
             proc = await asyncio.create_subprocess_shell(
                 pack_cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -224,6 +247,7 @@ pub const agentConfig: types.AgentConfig = .{{
                 StepStdout=skip_msg,
                 StepSuccess=True
             ))
+
         resp.payload = open(filename, "rb").read()
 
         return resp

