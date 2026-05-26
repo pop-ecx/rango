@@ -16,7 +16,7 @@ class ExitCommand(CommandBase):
     cmd = "exit"
     needs_admin = False
     help_cmd = "exit"
-    description = "This exits the current apfell agent by leveraging the ObjectiveC bridge's NSApplication terminate function."
+    description = "This exits the current Mythic agent."
     version = 1
     supported_ui_features = ["callback_table:exit"]
     author = "@its_a_feature_"
