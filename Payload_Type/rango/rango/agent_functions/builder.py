@@ -2,7 +2,6 @@ import pathlib
 from mythic_container.PayloadBuilder import *
 from mythic_container.MythicCommandBase import *
 from mythic_container.MythicRPC import *
-import json
 import tempfile
 from distutils.dir_util import copy_tree
 import asyncio
@@ -17,10 +16,10 @@ class Rango(PayloadType):
     wrapper = False
     wrapped_payloads = []
     note = """Simple zig implant for Linux"""
-    supports_dynamic_loading = False
+    supports_dynamic_loading = True
     c2_profiles = ["http"]
     mythic_encrypts = False
-    translation_container = "RangoTranslator" # "myPythonTranslation"
+    translation_container = "RangoTranslator"
 
     build_parameters = [
         BuildParameter(
@@ -78,16 +77,13 @@ class Rango(PayloadType):
     ]
 
     async def build(self) -> BuildResponse:
-        # this function gets called to create an instance of your payload
         resp = BuildResponse(status=BuildStatus.Success)
 
-        # create the payload
         config = {
             "payload_uuid": self.uuid,
             "callback_host": "",
             "headers": [],
             "USER_AGENT": "",
-            #"httpMethod": "POST",
             "post_uri": "",
             "callback_port": 80,
             "ssl": False,
@@ -110,7 +106,6 @@ class Rango(PayloadType):
             config["ssl"] = True
             config["encrypted_exchange_check"] = True
 
-        config["callback_host"] = config["callback_host"]
         headers = config.get("headers", {})
         if isinstance(headers, dict):
             for key, value in headers.items():
@@ -133,7 +128,6 @@ class Rango(PayloadType):
             resp.build_message = f"Unsupported OS: {target_os}"
             return resp
 
-        # Payload creation
         await SendMythicRPCPayloadUpdatebuildStep(MythicRPCPayloadUpdateBuildStepMessage(
             PayloadUUID=self.uuid,
             StepName="Gathering Files",
@@ -144,7 +138,6 @@ class Rango(PayloadType):
         agent_build_path = tempfile.TemporaryDirectory(suffix=self.uuid)
         copy_tree(str(self.agent_code_path), agent_build_path.name)
 
-        # A hacky way to replace placeholder values generated at runtime.
         config_zig_content = f"""
 const types = @import("types.zig");
 
@@ -173,10 +166,22 @@ pub const agentConfig: types.AgentConfig = .{{
 
         release_type = self.get_parameter("release_type")
 
+        # Commands that map 1:1 to -D build flags in build.zig
+        flaggable_commands = {
+            "shell", "pwd", "ls", "cat", "download",
+            "upload", "deletefile", "deletedirectory", "portscan"
+        }
+        selected_commands = self.commands.get_commands()
+        zig_flags = " ".join(
+            f"-D{cmd}=true"
+            for cmd in selected_commands
+            if cmd in flaggable_commands
+        )
+
         if release_type == "debug":
-            command = f"zig build -Dtarget={zig_target}"
+            command = f"zig build -Dtarget={zig_target} {zig_flags}"
         else:
-            command = f"zig build -Dtarget={zig_target} --release={release_type}"
+            command = f"zig build -Dtarget={zig_target} --release={release_type} {zig_flags}"
 
         filename = str(self.agent_code_path / "zig-out" / "bin" / binary_name)
         proc = await asyncio.create_subprocess_shell(
@@ -192,7 +197,7 @@ pub const agentConfig: types.AgentConfig = .{{
             resp.build_stderr = stderr.decode()
             return resp
 
-        os.chmod(filename, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)  # rwxr-xr-x
+        os.chmod(filename, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)
         await SendMythicRPCPayloadUpdatebuildStep(MythicRPCPayloadUpdateBuildStepMessage(
             PayloadUUID=self.uuid,
             StepName="Compiling",
@@ -204,7 +209,7 @@ pub const agentConfig: types.AgentConfig = .{{
         execution_mode = self.get_parameter("In Mem or Disk")
         packing_key = self.get_parameter("Packing_key")
 
-        if pack_with_zyra and target_os=="linux" and packing_key:
+        if pack_with_zyra and target_os == "linux" and packing_key:
             if execution_mode == "In Mem":
                 packed_filename = f"{filename}.p"
                 pack_cmd = f"zyra-im -o {packed_filename} -k {packing_key} {filename}"
@@ -212,22 +217,24 @@ pub const agentConfig: types.AgentConfig = .{{
                 packed_filename = f"{filename}"
                 pack_cmd = f"zyra -o {packed_filename} -k {packing_key} {filename}"
             else:
-                pass  # No packing if "None" is selected
+                packed_filename = filename
+                pack_cmd = None
 
-            proc = await asyncio.create_subprocess_shell(
-                pack_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await proc.communicate()
+            if pack_cmd:
+                proc = await asyncio.create_subprocess_shell(
+                    pack_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await proc.communicate()
 
-            if proc.returncode != 0:
-                resp.status = BuildStatus.Error
-                resp.build_stderr = f"ZYRA packing failed:\n{stderr.decode()}"
-                return resp
+                if proc.returncode != 0:
+                    resp.status = BuildStatus.Error
+                    resp.build_stderr = f"ZYRA packing failed:\n{stderr.decode()}"
+                    return resp
 
-            os.chmod(packed_filename, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)
-            filename = packed_filename
+                os.chmod(packed_filename, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)
+                filename = packed_filename
 
             await SendMythicRPCPayloadUpdatebuildStep(MythicRPCPayloadUpdateBuildStepMessage(
                 PayloadUUID=self.uuid,
@@ -249,5 +256,21 @@ pub const agentConfig: types.AgentConfig = .{{
             ))
 
         resp.payload = open(filename, "rb").read()
+
+        try:
+            all_rango_commands = [
+                "cat", "deletedirectory", "deletefile", "download",
+                "exit", "ls", "portscan", "pwd", "shell", "upload"
+            ]
+            unselected_commands = [cmd for cmd in all_rango_commands if cmd not in selected_commands]
+            for cmd in unselected_commands:
+                await SendMythicRPCCommandBlock(MythicRPCCommandBlockMessage(
+                    PayloadUUID=self.uuid,
+                    CommandName=cmd,
+                    Blocked=True,
+                    Comment="Blocked automatically because it was unselected in the build UI."
+                ))
+        except Exception as e:
+            print(f"[-] Failed to apply dynamic operator guardrails: {str(e)}")
 
         return resp
