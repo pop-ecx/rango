@@ -2,7 +2,6 @@ import pathlib
 from mythic_container.PayloadBuilder import *
 from mythic_container.MythicCommandBase import *
 from mythic_container.MythicRPC import *
-import json
 import tempfile
 from distutils.dir_util import copy_tree
 import asyncio
