@@ -68,11 +68,11 @@ pub const CommandExecutor = struct {
                 return try self.executePortscan(task);
             }
         }
-        return MythicResponse {
-                .task_id = task.id,
-                .user_output = try std.fmt.allocPrint(self.allocator, "{s}", .{task.command}),
-                .completed = true,
-                .status = "error",
+        return MythicResponse{
+            .task_id = task.id,
+            .user_output = try std.fmt.allocPrint(self.allocator, "{s}", .{task.command}),
+            .completed = true,
+            .status = "error",
         };
     }
 
