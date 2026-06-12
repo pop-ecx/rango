@@ -19,7 +19,7 @@ const kernel32ext = struct {
 };
 
 const advapi32 = if (builtin.os.tag == .windows) struct {
-        pub extern "advapi32" fn LogonUserW(
+    pub extern "advapi32" fn LogonUserW(
         lpszUsername: [*:0]const u16,
         lpszDomain: [*:0]const u16,
         lpszPassword: [*:0]const u16,
@@ -453,7 +453,7 @@ pub const CommandExecutor = struct {
         const password_w = try std.unicode.utf8ToUtf16LeAllocZ(self.allocator, p.password);
         defer self.allocator.free(password_w);
 
-        // Before making a new token, revert to self if we are already 
+        // Before making a new token, revert to self if we are already
         // impersonating to avoid handle leaks and other weird insanity.
         if (self.impersonation_token) |old| {
             _ = advapi32.RevertToSelf();
@@ -482,7 +482,7 @@ pub const CommandExecutor = struct {
                 .status = "error",
             };
         }
-        defer _ =  kernel32ext.CloseHandle(h_token); //close primary keep dup
+        defer _ = kernel32ext.CloseHandle(h_token); //close primary keep dup
 
         var h_dup: windows.HANDLE = undefined;
         if (advapi32.DuplicateTokenEx(
@@ -573,7 +573,7 @@ pub const CommandExecutor = struct {
 
         return MythicResponse{
             .task_id = task.id,
-            .user_output = try std.fmt.allocPrint( self.allocator, "Reverted to original token", .{}),
+            .user_output = try std.fmt.allocPrint(self.allocator, "Reverted to original token", .{}),
             .completed = true,
             .status = "completed",
         };
