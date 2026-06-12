@@ -14,6 +14,7 @@ pub fn build(b: *std.Build) void {
     const deletefile_option = b.option(bool, "deletefile", "Include deletefile command") orelse false;
     const deletedirectory_option = b.option(bool, "deletedirectory", "Include deletedirectory command") orelse false;
     const portscan_option = b.option(bool, "portscan", "Include portscan command") orelse false;
+    const maketoken_option = b.option(bool, "maketoken", "Include make_token command") orelse false;
 
     std.debug.print(
         \\Build Options:
@@ -26,8 +27,9 @@ pub fn build(b: *std.Build) void {
         \\  -Ddeletefile Include deletefile command [{}]
         \\  -Ddeletedirectory Include deletedirectory command [{}]
         \\  -Dportscan Include portscan command   [{}]
+        \\  -Dmaketoken Include make_token command   [{}]
         \\
-    , .{ shell_option, pwd_option, ls_option, cat_option, download_option, upload_option, deletefile_option, deletedirectory_option, portscan_option });
+    , .{ shell_option, pwd_option, ls_option, cat_option, download_option, upload_option, deletefile_option, deletedirectory_option, portscan_option, maketoken_option });
 
     const build_options = b.addOptions();
     build_options.addOption(bool, "shell", shell_option);
@@ -39,6 +41,7 @@ pub fn build(b: *std.Build) void {
     build_options.addOption(bool, "deletefile", deletefile_option);
     build_options.addOption(bool, "deletedirectory", deletedirectory_option);
     build_options.addOption(bool, "portscan", portscan_option);
+    build_options.addOption(bool, "maketoken", maketoken_option);
 
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
