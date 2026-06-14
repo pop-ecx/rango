@@ -18,7 +18,7 @@ class Rev2SelfCommand(CommandBase):
     cmd = "rev2self"
     needs_admin = False
     help_cmd = "rev2self"
-    description = "Reverts the current thread token to the original process token, dropping any active make_token impersonation."
+    description = "Reverts the current thread token to the original process token, dropping any active maketoken impersonation."
     version = 1
     author = "@pop-ecx"
     attackmapping = ["T1134"]

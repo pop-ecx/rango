@@ -38,7 +38,7 @@ class MakeTokenCommand(CommandBase):
     cmd = "maketoken"
     needs_admin = False
     help_cmd = "maketoken <username> <domain> <password> [logon_type]"
-    description = "Creates a new logon session with supplied credentials and impersonates it on the current thread. Network auth will use the new identity. Default logon type 9 (LOGON32_LOGON_NEW_CREDENTIALS)."
+    description = "creates a new logon session with supplied credentials and impersonates it on the current thread. network auth will use the new identity. default logon type 9 (logon32_logon_new_credentials)."
     version = 1
     author = "@pop-ecx"
     attackmapping = ["T1134", "T1134.003"]
