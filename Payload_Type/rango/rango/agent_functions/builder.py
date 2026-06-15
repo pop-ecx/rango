@@ -169,9 +169,11 @@ pub const agentConfig: types.AgentConfig = .{{
         # Commands that map 1:1 to -D build flags in build.zig
         flaggable_commands = {
             "shell", "pwd", "ls", "cat", "download",
-            "upload", "deletefile", "deletedirectory", "portscan"
+            "upload", "deletefile", "deletedirectory", "portscan", "maketoken"
         }
         selected_commands = self.commands.get_commands()
+        if "maketoken" in selected_commands and "rev2self" not in selected_commands:
+            selected_commands = list(selected_commands) + ["rev2self"]
         zig_flags = " ".join(
             f"-D{cmd}=true"
             for cmd in selected_commands
@@ -260,7 +262,7 @@ pub const agentConfig: types.AgentConfig = .{{
         try:
             all_rango_commands = [
                 "cat", "deletedirectory", "deletefile", "download",
-                "exit", "ls", "portscan", "pwd", "shell", "upload"
+                "exit", "ls", "portscan", "pwd", "shell", "upload", "maketoken"
             ]
             unselected_commands = [cmd for cmd in all_rango_commands if cmd not in selected_commands]
             for cmd in unselected_commands:
