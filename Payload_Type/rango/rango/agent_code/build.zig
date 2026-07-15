@@ -62,6 +62,13 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
+    const exe_check = b.addExecutable(.{
+        .name = "rango_check",
+        .root_module = exe_mod,
+    });
+    const check = b.step("check", "Check the app");
+    check.dependOn(&exe_check.step);
+
     const run_cmd = b.addRunArtifact(exe);
 
     run_cmd.step.dependOn(b.getInstallStep());
