@@ -28,13 +28,12 @@ const CommandExecutor = struct {
 };
 
 test "shell command execution via JSON" {
-    var gpa = std.heap.DebugAllocator(.{}){};
-    const allocator = gpa.allocator();
-    var threaded = std.Io.Threaded.init(allocator, .{});
+    var gpa = std.testing.allocator;
+    var threaded = std.Io.Threaded.init(gpa, .{});
     defer threaded.deinit();
     const io = threaded.io();
 
-    var executor = CommandExecutor{ .allocator = allocator, .io = io };
+    var executor = CommandExecutor{ .allocator = gpa, .io = io };
 
     const cases = [_][]const u8{
         "{\"command\": \"ls\"}",
@@ -46,7 +45,7 @@ test "shell command execution via JSON" {
 
     inline for (cases) |raw_json| {
         const output = try executor.executeShell(raw_json);
-        defer allocator.free(output);
+        defer gpa.free(output);
 
         std.debug.print("JSON: {s}\nOutput:\n{s}\n---\n", .{ raw_json, output });
 
