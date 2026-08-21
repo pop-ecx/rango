@@ -33,9 +33,9 @@ test "Delete file success case" {
 
     var executor = CommandExecutor{ .allocator = gpa, .io = threaded.io() };
 
-    var file = try std.Io.Dir.createFile(dir, io, "./testr", .{ .permissions = .default_file });
+    var file = try std.Io.Dir.createFile(dir, io, "./tests/testr", .{ .permissions = .default_file });
     defer file.close(io);
-    const case = "{\"path\": \"./testr\"}";
+    const case = "{\"path\": \"./tests/testr\"}";
     const output = try executor.executeDeleteFile(case);
     defer gpa.free(output);
     try std.testing.expectEqualStrings("Success", output);

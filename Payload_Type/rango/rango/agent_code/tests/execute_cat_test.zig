@@ -33,8 +33,8 @@ test "Read existing file successfully" {
     const dir = std.Io.Dir.cwd();
 
     var executor = CommandExecutor{ .allocator = gpa, .io = io };
-    try std.Io.Dir.writeFile(dir, io, .{ .sub_path = "./testr", .data = "AAAAAAAAAAAAAAA", .flags = .{ .permissions = .default_file } });
-    const case = "{\"path\": \"./testr\"}";
+    try std.Io.Dir.writeFile(dir, io, .{ .sub_path = "./tests/testr", .data = "AAAAAAAAAAAAAAA", .flags = .{ .permissions = .default_file } });
+    const case = "{\"path\": \"./tests/testr\"}";
     const output = try executor.executeCat(case);
     defer gpa.free(output);
     try std.testing.expectEqualStrings("Success", output);
