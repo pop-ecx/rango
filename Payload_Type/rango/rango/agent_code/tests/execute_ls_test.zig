@@ -6,15 +6,15 @@ const CommandExecutor = struct {
     io: std.Io,
 
     fn executeLs(self: *CommandExecutor, raw_json: []const u8) ![]const u8 {
-       const ExecuteLsParameters =  struct { path: []const u8 };
+        const ExecuteLsParameters = struct { path: []const u8 };
         const parsed = try json.parseFromSlice(ExecuteLsParameters, self.allocator, raw_json, .{});
         defer parsed.deinit();
 
         const path = parsed.value.path;
         if (path.len == 0) return try self.allocator.dupe(u8, "No path provided");
-        
+
         var dir = std.Io.Dir.cwd().openDir(self.io, path, .{ .iterate = true }) catch |err| {
-            return try std.fmt.allocPrint(self.allocator, "Error listing files: {s} ", .{ @errorName(err) });
+            return try std.fmt.allocPrint(self.allocator, "Error listing files: {s} ", .{@errorName(err)});
         };
         defer dir.close(self.io);
         var output = std.ArrayList(u8).empty;
@@ -31,7 +31,7 @@ const CommandExecutor = struct {
 
 test "ls current directory success" {
     const gpa = std.testing.allocator;
-    var threaded = std.Io.Threaded.init(gpa, .{}); 
+    var threaded = std.Io.Threaded.init(gpa, .{});
     defer threaded.deinit();
 
     var executor = CommandExecutor{ .allocator = gpa, .io = threaded.io() };
@@ -43,7 +43,7 @@ test "ls current directory success" {
 
 test "Empty directory path test failure" {
     const gpa = std.testing.allocator;
-    var threaded = std.Io.Threaded.init(gpa, .{}); 
+    var threaded = std.Io.Threaded.init(gpa, .{});
     defer threaded.deinit();
 
     var executor = CommandExecutor{ .allocator = gpa, .io = threaded.io() };

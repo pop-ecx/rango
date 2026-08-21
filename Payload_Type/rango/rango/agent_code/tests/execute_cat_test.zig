@@ -16,7 +16,7 @@ const CommandExecutor = struct {
         _ = std.Io.Dir.cwd().statFile(self.io, path, .{}) catch |err| {
             return try std.fmt.allocPrint(self.allocator, "Error reading file: {}", .{err});
         };
- 
+
         const content = std.Io.Dir.cwd().readFileAlloc(self.io, path, self.allocator, .limited(1024 * 1024)) catch |err| {
             return try std.fmt.allocPrint(self.allocator, "Error reading file: {s}", .{@errorName(err)});
         };
@@ -27,13 +27,13 @@ const CommandExecutor = struct {
 
 test "Read existing file successfully" {
     var gpa = std.testing.allocator;
-    var threaded = std.Io.Threaded.init(gpa, .{}); 
+    var threaded = std.Io.Threaded.init(gpa, .{});
     defer threaded.deinit();
-    const io = threaded.io(); 
+    const io = threaded.io();
     const dir = std.Io.Dir.cwd();
 
-    var executor = CommandExecutor{ .allocator = gpa, .io = io};
-    try std.Io.Dir.writeFile(dir, io, .{ .sub_path = "./testr", .data = "AAAAAAAAAAAAAAA", .flags = .{ .permissions = .default_file }});
+    var executor = CommandExecutor{ .allocator = gpa, .io = io };
+    try std.Io.Dir.writeFile(dir, io, .{ .sub_path = "./testr", .data = "AAAAAAAAAAAAAAA", .flags = .{ .permissions = .default_file } });
     const case = "{\"path\": \"./testr\"}";
     const output = try executor.executeCat(case);
     defer gpa.free(output);
@@ -42,11 +42,11 @@ test "Read existing file successfully" {
 
 test "Reading non existing file failure" {
     var gpa = std.testing.allocator;
-    var threaded = std.Io.Threaded.init(gpa, .{}); 
+    var threaded = std.Io.Threaded.init(gpa, .{});
     defer threaded.deinit();
-    const io = threaded.io(); 
+    const io = threaded.io();
 
-    var executor = CommandExecutor{ .allocator = gpa, .io = io};
+    var executor = CommandExecutor{ .allocator = gpa, .io = io };
     const case = "{\"path\": \"./non_existent_file\"}";
     const output = try executor.executeCat(case);
     defer gpa.free(output);
@@ -55,11 +55,11 @@ test "Reading non existing file failure" {
 
 test "Reading a blank file path failure" {
     var gpa = std.testing.allocator;
-    var threaded = std.Io.Threaded.init(gpa, .{}); 
+    var threaded = std.Io.Threaded.init(gpa, .{});
     defer threaded.deinit();
-    const io = threaded.io(); 
+    const io = threaded.io();
 
-    var executor = CommandExecutor{ .allocator = gpa, .io = io};
+    var executor = CommandExecutor{ .allocator = gpa, .io = io };
     const case = "{\"path\": \"\"}";
     const output = try executor.executeCat(case);
     defer gpa.free(output);

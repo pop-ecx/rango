@@ -18,7 +18,7 @@ const CommandExecutor = struct {
         };
 
         std.Io.Dir.cwd().deleteTree(self.io, path) catch |err| {
-            return try std.fmt.allocPrint(self.allocator, "Error deleting directory: {s}",  .{@errorName(err)});
+            return try std.fmt.allocPrint(self.allocator, "Error deleting directory: {s}", .{@errorName(err)});
         };
         return try self.allocator.dupe(u8, "Success");
     }
@@ -35,7 +35,7 @@ test "Delete directory success case" {
 
     var executor = CommandExecutor{ .allocator = allocator, .io = threaded.io() };
 
-    try std.Io.Dir.createDir(dir, io, "test_dir", .default_dir );
+    try std.Io.Dir.createDir(dir, io, "test_dir", .default_dir);
 
     const case = "{\"path\": \"test_dir\"}";
     const output = try executor.executeDeleteDirectory(case);
