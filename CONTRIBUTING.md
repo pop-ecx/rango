@@ -36,3 +36,11 @@ Please follow the steps below to contribute to this project:
 
 > Should you have any questions or bugs to report, please open an issue on the 
 > [issue tracker](https://github.com/pop-ecx/rango/issues).
+
+### Tests
+Current tests are stored in the `tests/` directory. To run individual tests
+
+`zig test tests/<test_file_name>.zig` for example, `zig test tests/execute_ls_test.zig`.
+
+To run all tests, it is advised to run `zig test tests/main.zig`. This is done as
+a hacky workaround to this [known issue](https://ziggit.dev/t/working-unit-tests-fail-when-started-from-zig-build-test/15197). Avoid running `zig build test` directly as it will incorrectly report failed runs.
