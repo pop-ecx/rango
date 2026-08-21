@@ -3,6 +3,7 @@ const json = std.json;
 
 const CommandExecutor = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
 
     fn executeShell(self: *CommandExecutor, raw_json: []const u8) ![]const u8 {
         const ShellParameters = struct { command: []const u8 };
@@ -12,8 +13,7 @@ const CommandExecutor = struct {
         const command = parsed.value.command;
         if (command.len == 0) return "No command provided";
 
-        const result = try std.process.Child.run(.{
-            .allocator = self.allocator,
+        const result = try std.process.run(self.allocator, self.io, .{
             .argv = &[_][]const u8{ "/bin/sh", "-c", command },
         });
 
@@ -28,10 +28,12 @@ const CommandExecutor = struct {
 };
 
 test "shell command execution via JSON" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+    var gpa = std.testing.allocator;
+    var threaded = std.Io.Threaded.init(gpa, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
 
-    var executor = CommandExecutor{ .allocator = allocator };
+    var executor = CommandExecutor{ .allocator = gpa, .io = io };
 
     const cases = [_][]const u8{
         "{\"command\": \"ls\"}",
@@ -43,7 +45,7 @@ test "shell command execution via JSON" {
 
     inline for (cases) |raw_json| {
         const output = try executor.executeShell(raw_json);
-        defer allocator.free(output);
+        defer gpa.free(output);
 
         std.debug.print("JSON: {s}\nOutput:\n{s}\n---\n", .{ raw_json, output });
 
