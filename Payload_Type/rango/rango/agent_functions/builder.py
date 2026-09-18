@@ -18,7 +18,7 @@ class Rango(PayloadType):
     note = """Simple zig implant for Linux"""
     supports_dynamic_loading = True
     c2_profiles = ["http"]
-    mythic_encrypts = False
+    mythic_encrypts = True
     translation_container = "RangoTranslator"
 
     build_parameters = [
@@ -96,10 +96,23 @@ class Rango(PayloadType):
             "killdate": "",
         }
 
+        encryption_enabled = False
+        aes_key_b64 = ""
+
         for c2 in self.c2info:
-            profile = c2.get_c2profile()
             for key, val in c2.get_parameters_dict().items():
-                config[key] = val
+                if isinstance(val, dict) and ("enc_key" in val or "dec_key" in val):
+                    crypto_value = val.get("value") or val.get("crypto_type") or "none"
+                    enc_key = val.get("enc_key") or val.get("dec_key")
+                    if crypto_value in ("aes256_hmac", "AES256", "aes256") and enc_key:
+                        encryption_enabled = True
+                        if isinstance(enc_key, bytes):
+                            aes_key_b64 = base64.b64encode(enc_key).decode("ascii")
+                        else:
+                            aes_key_b64 = str(enc_key)
+                    config[key] = crypto_value
+                else:
+                    config[key] = val
             break
 
         if "https://" in config["callback_host"]:
@@ -143,6 +156,8 @@ const types = @import("types.zig");
 
 pub const uuid: []const u8 = "{config['payload_uuid']}";
 pub const payload_uuid: []const u8 = "{config['payload_uuid']}";
+pub const encryption_enabled: bool = {"true" if encryption_enabled else "false"};
+pub const aes_key_b64: []const u8 = "{aes_key_b64}";
 pub const agentConfig: types.AgentConfig = .{{
     .callback_host = "{config['callback_host']}",
     .callback_port = {config['callback_port']},
