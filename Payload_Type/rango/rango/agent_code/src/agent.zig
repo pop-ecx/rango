@@ -119,7 +119,7 @@ pub const MythicAgent = struct {
     fn decodeMessage(self: *Self, b64_response: []const u8) ![]u8 {
         const decoded_len =
             base64.standard.Decoder.calcSizeForSlice(b64_response) catch
-            return error.InvalidBase64;
+                return error.InvalidBase64;
 
         const decoded = try self.allocator.alloc(u8, decoded_len);
         defer self.allocator.free(decoded);
@@ -145,7 +145,7 @@ pub const MythicAgent = struct {
 
         const inner_len =
             base64.standard.Decoder.calcSizeForSlice(plaintext) catch
-            return error.InvalidBase64;
+                return error.InvalidBase64;
 
         const inner = try self.allocator.alloc(u8, inner_len);
         defer self.allocator.free(inner);
