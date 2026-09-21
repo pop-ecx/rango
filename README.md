@@ -48,8 +48,6 @@ binaries.
 
 
 
-> Since the agent nor translator doesn't support encryption at the moment, you can achieve this using ssl in http profile. Make sure the ssl is from a trusted CA as zig's http client can be bitchy if it isn't.
-
 > ZYRA is now included as an option in the build process.
 
 If you want to use the agent pre-[writergate](https://ziglang.org/download/0.15.1/release-notes.html#Writergate), go to the 0.14.0 branch
