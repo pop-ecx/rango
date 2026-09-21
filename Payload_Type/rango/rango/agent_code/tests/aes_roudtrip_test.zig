@@ -28,7 +28,7 @@ pub const CryptoUtils = struct {
     }
 
     // We have to rawdog this because Zig doesn't have a cbc mode
-    // ── AES-256-CBC + PKCS#7 (inspired zig-crypto) 
+    // ── AES-256-CBC + PKCS#7 (inspired zig-crypto)
 
     /// Encrypts plaintext → ciphertext (PKCS#7 padded).
     /// Caller owns `out` buffer; must be ≥ padded length.
@@ -61,7 +61,7 @@ pub const CryptoUtils = struct {
 
     pub fn cbcDecrypt(key: *const [32]u8, iv: *const [16]u8, ciphertext: []const u8, out: []u8) !usize {
         if (ciphertext.len == 0 or ciphertext.len % block_length != 0) return error.InvalidCiphertext;
-        if (out.len <  ciphertext.len) return error.BufferTooSmall;
+        if (out.len < ciphertext.len) return error.BufferTooSmall;
 
         const ctx = std.crypto.core.aes.AesDecryptCtx(Aes256).init(key.*);
         var prev_block: [block_length]u8 = iv.*;
