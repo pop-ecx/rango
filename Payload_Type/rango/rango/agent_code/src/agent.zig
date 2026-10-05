@@ -59,7 +59,7 @@ pub const MythicAgent = struct {
             if (expected_len != 32) return error.InvalidAESKeyLength;
             try decoder.decode(&aes_key, config.aes_key_b64);
         } else {
-            aes_key = [_]u8{0} ** 32;
+            aes_key = @splat(0);
         }
 
         return Self{
