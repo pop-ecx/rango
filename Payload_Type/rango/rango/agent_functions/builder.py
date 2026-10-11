@@ -51,6 +51,13 @@ class Rango(PayloadType):
             default_value="Disk",
         ),
         BuildParameter(
+            name="Arch",
+            parameter_type=BuildParameterType.ChooseOne,
+            description="Choosw whether to target arm64 or x86_64",
+            choices=["x86_64", "arm64"],
+            default_value="x86_64",
+        ),
+        BuildParameter(
             name="Packing_key",
             parameter_type=BuildParameterType.String,
             description="Key to use for ZYRA packing (if enabled)",
