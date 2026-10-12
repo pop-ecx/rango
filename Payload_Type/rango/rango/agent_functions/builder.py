@@ -137,11 +137,19 @@ class Rango(PayloadType):
             config["proxyEnabled"] = True
 
         target_os = self.get_parameter("os")
+        target_arch = self.get_parameter("Arch")
+
+        arch_map = {
+            "x86_64": "x86_64",
+            "arm64": "aarch64",
+        }
+        zig_arch = arch_map.get(target_arch, "x86_64")
+
         if target_os == "linux":
-            zig_target = "x86_64-linux-gnu"
+            zig_target = f"{zig_arch}-linux-gnu"
             binary_name = "rango"
         elif target_os == "windows":
-            zig_target = "x86_64-windows-gnu"
+            zig_target = f"{zig_arch}-windows-gnu"
             binary_name = "rango.exe"
         else:
             resp.status = BuildStatus.Error
