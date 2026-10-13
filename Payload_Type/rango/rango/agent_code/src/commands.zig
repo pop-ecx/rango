@@ -476,7 +476,7 @@ pub const CommandExecutor = struct {
                 .user_output = try std.fmt.allocPrint(
                     self.allocator,
                     "LogonUserW failed: error code {d}",
-                    .{@intFromEnum(err)},
+                    .{@backingInt(err)},
                 ),
                 .completed = true,
                 .status = "error",
@@ -499,7 +499,7 @@ pub const CommandExecutor = struct {
                 .user_output = try std.fmt.allocPrint(
                     self.allocator,
                     "DuplicateTokenEx failed: error code {d}",
-                    .{@intFromEnum(err)},
+                    .{@backingInt(err)},
                 ),
                 .completed = true,
                 .status = "error",
@@ -514,7 +514,7 @@ pub const CommandExecutor = struct {
                 .user_output = try std.fmt.allocPrint(
                     self.allocator,
                     "ImpersonateLoggedOnUser failed: error code {d}",
-                    .{@intFromEnum(err)},
+                    .{@backingInt(err)},
                 ),
                 .completed = true,
                 .status = "error",
@@ -561,7 +561,7 @@ pub const CommandExecutor = struct {
                 .user_output = try std.fmt.allocPrint(
                     self.allocator,
                     "RevertToSelf failed: error code {d}",
-                    .{@intFromEnum(err)},
+                    .{@backingInt(err)},
                 ),
                 .completed = true,
                 .status = "error",
