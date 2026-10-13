@@ -57,7 +57,7 @@ pub fn build(b: *std.Build) void {
     });
 
     if (target.result.os.tag == .windows) {
-        exe.subsystem = .Windows;
+        exe.subsystem = .windows;
     }
 
     b.installArtifact(exe);
@@ -73,9 +73,7 @@ pub fn build(b: *std.Build) void {
 
     run_cmd.step.dependOn(b.getInstallStep());
 
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
+    run_cmd.addPassthruArgs();
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);

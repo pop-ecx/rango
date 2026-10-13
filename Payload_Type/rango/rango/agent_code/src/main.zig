@@ -8,7 +8,7 @@ const AgentConfig = types.AgentConfig;
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
-    var gpa = std.heap.DebugAllocator(.{}){};
+    var gpa = std.heap.SafeAllocator.init(std.heap.page_allocator, .{});
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 

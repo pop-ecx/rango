@@ -51,6 +51,13 @@ class Rango(PayloadType):
             default_value="Disk",
         ),
         BuildParameter(
+            name="Arch",
+            parameter_type=BuildParameterType.ChooseOne,
+            description="Choosw whether to target arm64 or x86_64",
+            choices=["x86_64", "arm64"],
+            default_value="x86_64",
+        ),
+        BuildParameter(
             name="Packing_key",
             parameter_type=BuildParameterType.String,
             description="Key to use for ZYRA packing (if enabled)",
@@ -130,11 +137,19 @@ class Rango(PayloadType):
             config["proxyEnabled"] = True
 
         target_os = self.get_parameter("os")
+        target_arch = self.get_parameter("Arch")
+
+        arch_map = {
+            "x86_64": "x86_64",
+            "arm64": "aarch64",
+        }
+        zig_arch = arch_map.get(target_arch, "x86_64")
+
         if target_os == "linux":
-            zig_target = "x86_64-linux-gnu"
+            zig_target = f"{zig_arch}-linux-gnu"
             binary_name = "rango"
         elif target_os == "windows":
-            zig_target = "x86_64-windows-gnu"
+            zig_target = f"{zig_arch}-windows-gnu"
             binary_name = "rango.exe"
         else:
             resp.status = BuildStatus.Error
