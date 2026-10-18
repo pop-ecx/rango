@@ -22,8 +22,7 @@ The output format supported is ELF (on Linux) and EXE (Windows), which is static
 
 
 ### Encryption
-Encryption is not yet supported as the Zig standard library does not have
-CBC mode for aes encryption. Encyption might be implemented at a later date.
+Encryption is supported. AES256-cbc (aes256_hmac).
 
 
 ## Authors

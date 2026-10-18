@@ -7,6 +7,7 @@ Rango comes with a couple of options to choose from when building the agent.
 - `Payload type`: This is just the name of the agent that will be displayed in the Mythic C2 interface. The option is `rango`.
 
 ### Payload Build Options
+- `Arch`: This chooses the target architecture for the agent. Currently supports aarch64 and x86_64.
 - `In mem or disk`: This option chooses whether the agent will be loaded in memory or written to disk upon unpacking/execution. The options are `in-mem`, `disk` or `None`.
 - `OS`: Operating system for the agent. Options are `linux` and `windows`.
 - `Out`: This chooses the output format for the agent. The option right now is `exe` which just means an executable file. The idea is to extend to other output formats like `so` and `dll` in the future.
