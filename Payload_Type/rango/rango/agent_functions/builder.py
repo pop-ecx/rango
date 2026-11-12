@@ -199,7 +199,8 @@ pub const agentConfig: types.AgentConfig = .{{
         # Commands that map 1:1 to -D build flags in build.zig
         flaggable_commands = {
             "shell", "pwd", "ls", "cat", "download",
-            "upload", "deletefile", "deletedirectory", "portscan", "maketoken"
+            "upload", "deletefile", "deletedirectory", "portscan", "maketoken",
+            "persistence"
         }
         selected_commands = self.commands.get_commands()
         if "maketoken" in selected_commands and "rev2self" not in selected_commands:
