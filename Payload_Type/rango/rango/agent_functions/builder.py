@@ -293,7 +293,8 @@ pub const agentConfig: types.AgentConfig = .{{
         try:
             all_rango_commands = [
                 "cat", "deletedirectory", "deletefile", "download",
-                "exit", "ls", "portscan", "pwd", "shell", "upload", "maketoken"
+                "exit", "ls", "portscan", "pwd", "shell", "upload", "maketoken",
+                "persistence"
             ]
             unselected_commands = [cmd for cmd in all_rango_commands if cmd not in selected_commands]
             for cmd in unselected_commands:
