@@ -1,12 +1,14 @@
-import pathlib
-from mythic_container.PayloadBuilder import *
-from mythic_container.MythicCommandBase import *
-from mythic_container.MythicRPC import *
-import tempfile
-from distutils.dir_util import copy_tree
 import asyncio
 import os
+import pathlib
 import stat
+import tempfile
+from distutils.dir_util import copy_tree
+
+from mythic_container.MythicCommandBase import *
+from mythic_container.MythicRPC import *
+from mythic_container.PayloadBuilder import *
+
 
 class Rango(PayloadType):
     name = "rango"
