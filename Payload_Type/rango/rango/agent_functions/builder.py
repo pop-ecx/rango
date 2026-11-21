@@ -1,12 +1,14 @@
-import pathlib
-from mythic_container.PayloadBuilder import *
-from mythic_container.MythicCommandBase import *
-from mythic_container.MythicRPC import *
-import tempfile
-from distutils.dir_util import copy_tree
 import asyncio
 import os
+import pathlib
 import stat
+import tempfile
+from distutils.dir_util import copy_tree
+
+from mythic_container.MythicCommandBase import *
+from mythic_container.MythicRPC import *
+from mythic_container.PayloadBuilder import *
+
 
 class Rango(PayloadType):
     name = "rango"
@@ -56,6 +58,13 @@ class Rango(PayloadType):
             description="Choosw whether to target arm64 or x86_64",
             choices=["x86_64", "arm64"],
             default_value="x86_64",
+        ),
+        BuildParameter(
+            name="persistence",
+            parameter_type=BuildParameterType.Boolean,
+            description="Compile with persistence enabled",
+            default_value=False,
+            required=False,
         ),
         BuildParameter(
             name="Packing_key",
@@ -195,6 +204,7 @@ pub const agentConfig: types.AgentConfig = .{{
         ))
 
         release_type = self.get_parameter("release_type")
+        persistence = self.get_parameter("persistence")
 
         # Commands that map 1:1 to -D build flags in build.zig
         flaggable_commands = {
@@ -209,6 +219,9 @@ pub const agentConfig: types.AgentConfig = .{{
             for cmd in selected_commands
             if cmd in flaggable_commands
         )
+
+        if persistence:
+            zig_flags += " -Dpersistence=true"
 
         if release_type == "debug":
             command = f"zig build -Dtarget={zig_target} {zig_flags}"

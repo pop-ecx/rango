@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const build_options = @import("build_options");
 const crypto = std.crypto;
 const Io = std.Io;
 const base64 = std.base64;
@@ -363,7 +364,7 @@ pub const TimeUtils = struct {
     }
 };
 
-pub const PersistUtils = struct {
+pub const PersistUtils = if (build_options.persistence) struct {
     pub fn installCron(agent_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
         if (builtin.os.tag == .windows) {
             const existing = try std.process.run(allocator, io, .{
@@ -546,5 +547,19 @@ pub const PersistUtils = struct {
     pub fn updateCronEntry(old_path: []const u8, new_path: []const u8, allocator: std.mem.Allocator, io: Io) !void {
         try PersistUtils.removeCronEntry(old_path, allocator, io);
         try PersistUtils.installCron(new_path, allocator, io);
+        }
+} else struct {
+    pub fn installCron(_: []const u8, _: std.mem.Allocator, _: Io) !void {
+        return error.PersistenceDisabled;
     }
+    pub fn removeCronEntry(_: []const u8, _: std.mem.Allocator, _: Io) !void {
+        return error.PersistenceDisabled;
+    }
+    pub fn getCronEntries(_: std.mem.Allocator, _: Io) !?[]const u8 {
+        return error.PersistenceDisabled;
+    }
+    pub fn updateCronEntry(_: []const u8, _: []const u8, _: std.mem.Allocator, _: Io) !void {
+        return error.PersistenceDisabled;
+    }
+
 };
